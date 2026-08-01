@@ -48,7 +48,7 @@ const Navbar = () => {
       </ul>
 
       <div className="flex items-center gap-2 md:gap-3">
-        <a href="/Releases/KshirSagar.apk" download className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-[1.2rem] md:py-[0.52rem] bg-gold/5 border border-saffron rounded-full text-saffron font-bold text-[0.68rem] md:text-[0.8rem] font-inter cursor-pointer no-underline transition-all duration-200 hover:scale-105 hover:bg-gold/15">
+        <a href="/KshirSagar.apk" download className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-[1.2rem] md:py-[0.52rem] bg-gold/5 border border-saffron rounded-full text-saffron font-bold text-[0.68rem] md:text-[0.8rem] font-inter cursor-pointer no-underline transition-all duration-200 hover:scale-105 hover:bg-gold/15">
           <span>📱</span> Get App
         </a>
 
