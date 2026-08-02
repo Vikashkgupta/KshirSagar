@@ -1,6 +1,6 @@
-const Airtable = require('airtable');
+import Airtable from 'airtable';
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   // 1. Check for required Environment Variables
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME } = process.env;
 
@@ -15,8 +15,7 @@ exports.handler = async (event, context) => {
     // 2. Initialize Airtable
     const base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base(AIRTABLE_BASE_ID);
     const records = await base(AIRTABLE_TABLE_NAME).select({
-      // You can add sorting here if needed in the future
-      // sort: [{ field: "category", direction: "asc" }]
+      // Sort or filter options can go here if needed
     }).all();
 
     // 3. Map Airtable records to clean JSON
