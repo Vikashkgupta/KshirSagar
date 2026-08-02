@@ -14,14 +14,17 @@ exports.handler = async (event, context) => {
     const base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base(AIRTABLE_BASE_ID);
     const records = await base(AIRTABLE_TABLE_NAME).select().all();
 
-    const menuItems = records.map(record => ({
-      name: record.get('name') || '',
-      category: record.get('category') || 'Uncategorized',
-      description: record.get('description') || '',
-      price: record.get('price') || '',
-      image: record.get('image') || '',
-      available: record.get('available') !== false
-    })).filter(item => item.available && item.name);
+    const menuItems = records.map(record => {
+      // Checking both lowercase (from CSV) and uppercase (if Airtable auto-capitalized)
+      return {
+        name: record.get('name') || record.get('Name') || '',
+        category: record.get('category') || record.get('Category') || 'Uncategorized',
+        description: record.get('description') || record.get('Description') || '',
+        price: record.get('price') || record.get('Price') || '',
+        image: record.get('image') || record.get('Image') || '',
+        available: record.get('available') !== false && record.get('Available') !== false
+      };
+    }).filter(item => item.available && item.name); // Filters out blank rows
 
     return {
       statusCode: 200,
