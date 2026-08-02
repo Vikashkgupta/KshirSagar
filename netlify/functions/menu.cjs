@@ -1,7 +1,6 @@
-import Airtable from 'airtable';
+const Airtable = require('airtable');
 
-export const handler = async (event, context) => {
-  // 1. Check for required Environment Variables
+exports.handler = async (event, context) => {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME } = process.env;
 
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_NAME) {
@@ -12,28 +11,23 @@ export const handler = async (event, context) => {
   }
 
   try {
-    // 2. Initialize Airtable
     const base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base(AIRTABLE_BASE_ID);
-    const records = await base(AIRTABLE_TABLE_NAME).select({
-      // Sort or filter options can go here if needed
-    }).all();
+    const records = await base(AIRTABLE_TABLE_NAME).select().all();
 
-    // 3. Map Airtable records to clean JSON
     const menuItems = records.map(record => ({
       name: record.get('name') || '',
       category: record.get('category') || 'Uncategorized',
       description: record.get('description') || '',
       price: record.get('price') || '',
       image: record.get('image') || '',
-      available: record.get('available') !== false // defaults to true unless explicitly false
-    })).filter(item => item.available && item.name); // Only return available items
+      available: record.get('available') !== false
+    })).filter(item => item.available && item.name);
 
-    // 4. Return successful response
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*', // Allows frontend to fetch without CORS issues
+        'Access-Control-Allow-Origin': '*', 
       },
       body: JSON.stringify(menuItems),
     };
