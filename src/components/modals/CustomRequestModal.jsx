@@ -43,14 +43,14 @@ const CustomRequestModal = () => {
 
   return (
     <div 
-      className={`fixed inset-0 z-[4000] bg-black/70 backdrop-blur-md flex items-center justify-center p-[1.5rem] transition-opacity duration-300 ${isCustomRequestOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+      className={`fixed inset-0 z-[4000] bg-white/40 backdrop-blur-md flex items-center justify-center p-[1.5rem] transition-opacity duration-300 ${isCustomRequestOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) dispatch(toggleCustomRequest(false));
       }}
     >
       <div className={`relative z-10 bg-[#0c0a06]/82 border border-gold/22 rounded-[22px] shadow-[0_30px_80px_rgba(0,0,0,0.7),0_0_0_1px_rgba(212,175,55,0.08)] backdrop-blur-[20px] max-w-[440px] w-full p-[2rem] transition-transform duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] ${isCustomRequestOpen ? 'scale-100 translate-y-0' : 'scale-[0.92] translate-y-[20px]'} dark:bg-[#fdfaf0]/95 dark:border-gold/40`}>
         
-        <h3 className="font-playfair text-gold mb-[0.8rem] text-[1.4rem] dark:text-[#b8860b]">✨ Custom Dish Request</h3>
+        <h3 className="font-playfair text-gold mb-[0.8rem] text-[1.4rem] dark:text-[#b8860b]">Custom Dish Request</h3>
         <p className="text-[#ccc] text-[0.9rem] font-inter mb-[1.5rem] leading-[1.6] dark:text-[#555]">
           Craving something not on the menu? Let our master chefs craft it for you.
         </p>
