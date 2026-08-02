@@ -66,8 +66,8 @@ const DishPopup = () => {
       {/* Overlay Background */}
       <div className="absolute inset-0 z-0" onClick={() => dispatch(closeDishPopup())}></div>
       
-      <div className="relative w-full max-w-[480px] mx-auto z-10 max-md:w-[92vw] h-[88vh] md:h-[92vh] max-h-[850px] flex flex-col group">
-        
+<div className="relative w-full max-w-[480px] mx-auto z-10 max-md:w-[92vw] h-[78vh] md:h-[92vh] max-md:mb-[4.5rem] max-h-[850px] flex flex-col group">
+          
         {/* Main Modal Container */}
         <div className={`bg-white rounded-[32px] shadow-[0_30px_90px_rgba(0,0,0,0.4),0_0_0_1px_rgba(212,175,55,0.15)] w-full h-full flex flex-col overflow-hidden relative transition-transform duration-400 cubic-bezier(0.16,1,0.3,1) ${isOpen ? 'scale-100 translate-y-0' : 'scale-[0.92] translate-y-[20px]'}`}>
           
@@ -154,7 +154,7 @@ const DishPopup = () => {
                     <span className="font-inter text-[0.75rem] font-bold text-[#888] uppercase tracking-[0.08em] mb-[0.2rem]">Total Price</span>
                     <span className="font-inter text-[1.4rem] font-black text-[#111] leading-none">{item.price}</span>
                   </div>
-                  <button onClick={() => handleAdd(item.price, '')} className="h-[48px] px-[1.8rem] bg-gradient-to-br from-[#1A2F24] to-[#2B5C3A] hover:from-[#2B5C3A] hover:to-[#1A2F24] border-none rounded-full text-white font-inter text-[0.85rem] font-bold tracking-[0.08em] cursor-pointer shadow-[0_4px_16px_rgba(26,47,36,0.25)] transition-all uppercase flex items-center justify-center hover:-translate-y-[2px] active:scale-[0.97] gap-[8px]">
+                  <button onClick={() => handleAdd(item.price, '')} className="h-[48px] px-[1.8rem] bg-gradient-to-br from-[#2f291a] to-[#5c4c2b] hover:from-[#5c4e2b] hover:to-[#2f281a] border-none rounded-full text-white font-inter text-[0.85rem] font-bold tracking-[0.08em] cursor-pointer shadow-[0_4px_16px_rgba(26,47,36,0.25)] transition-all uppercase flex items-center justify-center hover:-translate-y-[2px] active:scale-[0.97] gap-[8px]">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
