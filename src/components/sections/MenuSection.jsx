@@ -21,61 +21,28 @@ const MenuSection = () => {
         if (!response.ok) throw new Error('Failed to fetch menu data');
         
         const flatData = await response.json();
-        
-        // --- DATA TRANSFORMATION ---
-        // Airtable gives us separate rows for variants (e.g. "Pizza (Small)", "Pizza (Large)").
-        // We group them back together so the UI layout remains EXACTLY identical.
-        const grouped = {};
         const categoriesSet = new Set();
 
-        flatData.forEach(row => {
+        const formattedItems = flatData.map(row => {
           categoriesSet.add(row.category);
 
-          // Regex to split "Sweetcorn Pizza (Small)" into Base: "Sweetcorn Pizza", Variant: "Small"
-          const match = row.name.match(/^(.*?)(?:\s*\((.*?)\))?$/);
-          const baseName = match[1].trim();
-          const variant = match[2] ? match[2].trim() : null;
-
-          if (!grouped[baseName]) {
-            grouped[baseName] = {
-              baseName,
-              category: row.category,
-              desc: row.description || '',
-              imageUrl: row.image || '',
-              variants: []
-            };
-          }
-
-          grouped[baseName].variants.push({
-            label: variant || '',
-            price: String(row.price).replace(/[^\d]/g, '') // Extract just the number
-          });
-        });
-
-        // Format exactly how MenuItemCard expects it
-        const formattedItems = Object.values(grouped).map(group => {
-          const hasVariants = group.variants.length > 1;
-          let finalPrice = '';
-          let subCats = '';
-
-          if (hasVariants) {
-            finalPrice = group.variants.map(v => `₹${v.price}`).join(' / ');
-            subCats = group.variants.map(v => v.label).join(' / ');
-          } else {
-            finalPrice = `₹${group.variants[0].price}`;
+          // Automatically adds ₹ symbol correctly even for ranges like "80 / 130"
+          let formattedPrice = String(row.price);
+          if (!formattedPrice.includes('₹')) {
+              formattedPrice = formattedPrice.replace(/\b(\d+)\b/g, '₹$1');
           }
 
           return {
             cat: {
-              title: group.category,
-              sub: subCats,
+              title: row.category,
+              sub: '', 
             },
             item: {
-              name: group.baseName,
-              price: finalPrice,
-              desc: group.desc,
-              imageUrl: group.imageUrl,
-              tags: [], // Airtable tags can be added later if needed
+              name: row.name,
+              price: formattedPrice,
+              desc: row.description || '',
+              imageUrl: row.image || '',
+              tags: [], 
               ingredients: [] 
             }
           };
@@ -97,7 +64,6 @@ const MenuSection = () => {
   return (
     <section id="menu" className="pt-[5rem] px-0 pb-[3rem] bg-white !important">
       
-      {/* Header */}
       <div className="px-[1rem] md:px-[2.5rem] pb-[2rem] md:pb-[3rem]">
         <div className="text-saffron text-[0.7rem] tracking-[0.25em] font-inter mb-[0.65rem] uppercase">— THE TASTE MATRIX —</div>
         <h2 className="text-[clamp(1.9rem,4vw,3rem)] font-bold leading-[1.1] text-[#111] !important">
@@ -105,7 +71,6 @@ const MenuSection = () => {
         </h2>
       </div>
 
-      {/* Loading & Error States */}
       {isLoading && (
         <div className="text-center py-10 font-inter text-gold font-bold animate-pulse">
           Fetching Live Menu from Kitchen...
@@ -120,14 +85,11 @@ const MenuSection = () => {
 
       {!isLoading && !error && (
         <>
-          {/* Pass dynamic categories down */}
           <MenuCategoryNav 
             activeCategory={activeCategory} 
             setActiveCategory={setActiveCategory} 
             dynamicCategories={dynamicCategories} 
           />
-          
-          {/* Pass dynamic items down */}
           <MenuGrid 
             activeCategory={activeCategory} 
             menuItems={menuItems} 
@@ -135,7 +97,6 @@ const MenuSection = () => {
         </>
       )}
 
-      {/* Custom Request CTA */}
       <div className="text-center px-[1rem] md:px-[2.5rem] py-[1rem] pb-[2rem]">
         <button 
           onClick={() => dispatch(toggleCustomRequest(true))}
