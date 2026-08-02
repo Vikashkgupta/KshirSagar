@@ -1,0 +1,115 @@
+﻿name,category,description,price,image
+Sweetcorn Pizza,Pizza,Fresh sweetcorn & cheese,80 / 130,img/sweetcornpizza.jpg
+Vegetable Pizza,Pizza,Veggies with golden mozzarella,80 / 130,https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400&q=80
+Paneer Pizza,Pizza,Spicy paneer,100 / 150,https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&q=80
+Mushroom Pizza,Pizza,Cheesy mushrooms,120 / 180,https://images.unsplash.com/photo-1528137871618-79d2761e3fd5?w=400&q=80
+Veg Chowmein,Chowmein,Classic street-style noodles,35 / 70,https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=400&q=80
+Paneer Chowmein,Chowmein,Noodles tossed with paneer,60 / 100,https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400&q=80
+Special Chowmein,Chowmein,Chef's special with veggies,120,https://images.unsplash.com/photo-1617093727343-374698b1b08d?w=400&q=80
+Hakka Noodles,Chowmein,Indo-Chinese style noodles,180,https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?w=400&q=80
+Singapuri Noodles,Chowmein,Spicy Singapore style noodles,180,https://images.unsplash.com/photo-1555126634-323283e090fa?w=400&q=80
+Onion Dosa,Dosa,Crispy dosa with onions,70,https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80
+Masala Dosa,Dosa,Stuffed with spiced potato,80,https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&q=80
+Special Dosa,Dosa,Premium chef's secret stuffing,120,https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=400&q=80
+Paneer Dosa,Dosa,Stuffed with paneer bhurji,140,https://images.unsplash.com/photo-1610192244261-3517640d2fe8?w=400&q=80
+Uttapam,Dosa,Thick pancake with veggies,180,https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80
+Cheese Uttapam,Dosa,Loaded with melted cheese,200,https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=400&q=80
+Shahi Dosa,Dosa,Cashew & dry fruit filling,200,https://images.unsplash.com/photo-1668236203588-4444983a48e7?w=400&q=80
+Potato Chilli,Chilli Manchurian,Crispy potatoes in chilli sauce,60 / 100,https://images.unsplash.com/photo-1574894709920-11b28e7367e3?w=400&q=80
+Veg Manchurian,Chilli Manchurian,Classic Manchurian gravy,70 / 120,https://images.unsplash.com/photo-1603360946369-dc9bb6258143?w=400&q=80
+Paneer Chilli,Chilli Manchurian,Paneer in hot chilli-garlic,90 / 170,https://images.unsplash.com/photo-1645177628172-a6b1e490b4a0?w=400&q=80
+Mushroom Chilli,Chilli Manchurian,Mushrooms with bell peppers,200,https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&q=80
+Veg Fried Rice,Rice,Fresh fried rice,60,https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&q=80
+Paneer Fried Rice,Rice,Aromatic rice with paneer,80,https://images.unsplash.com/photo-1536304993881-ff86e0c9b0b4?w=400&q=80
+Combo Rice,Rice,Rice with Manchurian combo,110,https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=400&q=80
+Veg Roll,Rolls,Paratha roll with veggies,40,https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400&q=80
+Paneer Roll,Rolls,Paneer tikka in paratha,50,https://images.unspllash.com/photo-1618005182384-a83a8bd57fbe?w=400&q=80
+Mushroom Roll,Rolls,Spiced mushroom in crispy roll,70,https://images.unsplash.com/photo-1565299507177-b0ac66763828?w=400&q=80
+Veg Crunchy Roll,Rolls,Crunchy filling with chutney,60,https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=400&q=80
+Vegetable Sandwich,Sandwich,Veggies on toasted bread,60,https://images.unsplash.com/photo-1553909489-cd47e0907980?w=400&q=80
+Corn Sandwich,Sandwich,Sweet corn & cream cheese,80,https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&q=80
+Paneer Sandwich,Sandwich,Grilled paneer with mint chutney,80,https://images.unsplash.com/photo-1521390188846-e2a3a97453a0?w=400&q=80
+Pizza Sandwich,Sandwich,Pizza-style filling in sandwich,100,https://images.unsplash.com/photo-1509722747041-616f39b57569?w=400&q=80
+Mushroom Sandwich,Sandwich,Mushrooms with garlic butter,100,https://images.unsplash.com/photo-1567234669003-dce7a7a88821?w=400&q=80
+Tikki Burger,Burger,Classic aloo tikki patty,30,https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80
+Paneer Burger,Burger,Juicy paneer patty,50,https://images.unsplash.com/photo-1550317138-10000687a72b?w=400&q=80
+Sandwich Burger,Burger,Burger meets sandwich,40,https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=400&q=80
+Pizza Style Burger,Burger,Pizza sauce & cheese,50,https://images.unsplash.com/photo-1553979459-d2229ba7433b?w=400&q=80
+Paneer Tikki Burger,Burger,Spiced paneer tikki,50,https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=400&q=80
+Veg Burger,Burger,Veggie patty with lettuce,70,https://images.unsplash.com/photo-1585190411866-9e83e4f67e7e?w=400&q=80
+Double Veg Burger,Burger,"Double patty, double indulgence",99,https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=400&q=80
+Paneer Pakoda,Snacks,Fried paneer in spiced batter,80,https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80
+Paneer Lollipop (6pcs),Snacks,Crispy paneer on skewers,200,https://images.unsplash.com/photo-1596560548464-f010549b84d7?w=400&q=80
+Veg Pakoda,Snacks,Crispy mixed vegetable fritters,60,https://images.unsplash.com/photo-1626776876729-bab43bde8290?w=400&q=80
+Onion Pakoda,Snacks,Spiced crispy onion rings,50,https://images.unsplash.com/photo-1626776876729-bab43bde8290?w=400&q=80
+French Fries,Snacks,Classic salted potato fries,70,https://images.unsplash.com/photo-1562059390-d71548de2201?w=400&q=80
+Cheese Fries,Snacks,Fries loaded with melted cheese,100,https://images.unsplash.com/photo-1574126154517-d1e0d89ef734?w=400&q=80
+Masala Fries,Snacks,Spicy Indian style potato fries,90,https://images.unsplash.com/photo-1534422298391-e4f8c9714c53?w=400&q=80
+Veg Momos,Snacks,Steamed vegetable stuffed dumplings,60,https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=400&q=80
+Fried Momos,Snacks,Crispy fried vegetable dumplings,80,https://images.unsplash.com/photo-1534422298391-e4f8c9714c53?w=400&q=80
+Spring Roll,Snacks,Crispy rolls stuffed with veggies,90,https://images.unsplash.com/photo-1541696432-82c6da8ce7bf?w=400&q=80
+Gulab Jamun,Sweets,Soft milk dough in syrup (1 pc),20,https://images.unsplash.com/photo-1557434444-245ed7e793ea?w=400&q=80
+Rasgulla,Sweets,Spongy cottage cheese balls (1 pc),20,https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=400&q=80
+Rajbhog,Sweets,Premium saffron cottage cheese (1 pc),30,https://images.unsplash.com/photo-1605197175225-b827e693245c?w=400&q=80
+Rasmalai,Sweets,Cottage cheese in sweetened milk (1 pc),40,https://images.unsplash.com/photo-1621236894042-4916a445dbe7?w=400&q=80
+Cham Cham,Sweets,Traditional sweet Bengali delicacy (1 pc),25,https://images.unsplash.com/photo-1519869380628-ba459a1f28bc?w=400&q=80
+Kala Jamun,Sweets,Dark roasted sweet milk dumplings (1 pc),25,https://images.unsplash.com/photo-1557434444-245ed7e793ea?w=400&q=80
+Milk Cake,Sweets,Rich condensed milk fudge (250 g),200,https://images.unsplash.com/photo-1621236894042-4916a445dbe7?w=400&q=80
+Kalakand,Sweets,Soft milk and cheese fudge (250 g),210,https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=400&q=80
+Kaju Katli,Sweets,Premium cashew nut fudge (1 kg),800,https://images.unsplash.com/photo-1519869380628-ba459a1f28bc?w=400&q=80
+Besan Laddu,Sweets,Roasted gram flour sweet balls (1 kg),250,https://images.unsplash.com/photo-1605197175225-b827e693245c?w=400&q=80
+Motichoor Laddu,Sweets,Fine sweet gram flour pearls (1 kg),300,https://images.unsplash.com/photo-1605197175225-b827e693245c?w=400&q=80
+Peda,Sweets,Soft traditional milk fudge (1 kg),350,https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=400&q=80
+Barfi,Sweets,Classic Indian sweet milk squares (1 kg),350,https://images.unsplash.com/photo-1621236894042-4916a445dbe7?w=400&q=80
+Soan Papdi,Sweets,Flaky sweet gram flour dessert (250 g),200,https://images.unsplash.com/photo-1519869380628-ba459a1f28bc?w=400&q=80
+Balushahi,Sweets,Flaky sweet pastry doughnuts (1 kg),280,https://images.unsplash.com/photo-1557434444-245ed7e793ea?w=400&q=80
+Ghewar,Sweets,Traditional Rajasthani disc sweet (1 kg),500,https://images.unsplash.com/photo-1605197175225-b827e693245c?w=400&q=80
+Imarti,Sweets,Flower-shaped lentil flour sweet (1 kg),300,https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=400&q=80
+Jalebi,Sweets,Crispy deep-fried sweet spirals (1 kg),200,https://images.unsplash.com/photo-1621236894042-4916a445dbe7?w=400&q=80
+Chocolate Cake,Cakes,Rich chocolate layer cake (500 g),350,https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80
+Black Forest,Cakes,Chocolate cherry cream cake (500 g),300,https://images.unsplash.com/photo-1588195538320-064908f57348?w=400&q=80
+White Forest,Cakes,Vanilla cherry cream cake (500 g),320,https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=400&q=80
+Butterscotch,Cakes,Caramelized butterscotch cream cake (500 g),350,https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80
+Pineapple,Cakes,Fresh pineapple cream cake (500 g),300,https://images.unsplash.com/photo-1588195538320-064908f57348?w=400&q=80
+Vanilla,Cakes,Classic vanilla sponge cake (500 g),250,https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=400&q=80
+Red Velvet,Cakes,Rich crimson layer cake (500 g),450,https://images.unsplash.com/photo-1616541823729-00fe0aacd32c?w=400&q=80
+Fruit Cake,Cakes,Fresh mixed fruit cake (500 g),400,https://images.unsplash.com/photo-1588195538320-064908f57348?w=400&q=80
+Truffle Cake,Cakes,Dense chocolate truffle cake (500 g),500,https://images.unsplash.com/photo-1535141192574-5d48937f6104?w=400&q=80
+Photo Cake,Cakes,Customizable printed photo cake (500 g),600,https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80
+Bread,Bakery,Freshly baked white bread (400 g),40,https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80
+Brown Bread,Bakery,Healthy whole wheat bread (400 g),50,https://images.unsplash.com/photo-1599320677561-bd804b4d825c?w=400&q=80
+Pav,Bakery,Soft Indian bread rolls (6 pcs),30,https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80
+Bun,Bakery,Sweet and soft round bun (1 pc),20,https://images.unsplash.com/photo-1599320677561-bd804b4d825c?w=400&q=80
+Garlic Bread,Bakery,Buttery toasted garlic bread (150 g),80,https://images.unspllash.com/photo-1573140247632-f8fd74997d5c?w=400&q=80
+Toast,Bakery,Crispy baked bread slices (200 g),50,https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80
+Rusk,Bakery,Crunchy twice-baked tea bread (250 g),60,https://images.unsplash.com/photo-1599320677561-bd804b4d825c?w=400&q=80
+Cookies,Bakery,Classic buttery baked cookies (250 g),100,https://images.unsplash.com/photo-1589367920969-abce89c259f8?w=400&q=80
+Butter Cookies,Bakery,Rich butter flavored cookies (250 g),120,https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&q=80
+Jeera Cookies,Bakery,Sweet and salty cumin cookies (250 g),90,https://images.unsplash.com/photo-1589367920969-abce89c259f8?w=400&q=80
+Cup Cake,Bakery,Miniature baked sweet cake (1 pc),30,https://images.unsplash.com/photo-1550617931-e17a7b70dce2?w=400&q=80
+Muffin,Bakery,Soft and fluffy baked muffin (1 pc),40,https://images.unsplash.com/photo-1607958996333-41aef7caefaa?w=400&q=80
+Puff,Bakery,Flaky baked savory pastry (1 pc),20,https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80
+Veg Puff,Bakery,Spiced vegetable filled pastry (1 pc),25,https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80
+Coca Cola,Cold Drinks,Chilled classic carbonated cola (500 ml),40,https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400&q=80
+Pepsi,Cold Drinks,Refreshing carbonated cola drink (500 ml),40,https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=400&q=80
+Sprite,Cold Drinks,Crisp lemon lime soda (500 ml),40,https://images.unsplash.com/photo-1625772299849-227fb23907c1?w=400&q=80
+Limca,Cold Drinks,Cloudy lemon flavored soda (500 ml),40,https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80
+Fanta,Cold Drinks,Fruity orange carbonated drink (500 ml),40,https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=400&q=80
+Thums Up,Cold Drinks,Strong Indian carbonated cola (500 ml),40,https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400&q=80
+Mountain Dew,Cold Drinks,Citrus flavored refreshing soda (500 ml),40,https://images.unsplash.com/photo-1625772299849-227fb23907c1?w=400&q=80
+Slice,Cold Drinks,Sweet mango fruit drink (500 ml),45,https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80
+Maaza,Cold Drinks,Rich and thick mango juice (500 ml),45,https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80
+Frooti,Cold Drinks,Classic mango juice drink (500 ml),45,https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80
+Appy Fizz,Cold Drinks,Sparkling apple juice drink (250 ml),40,https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=400&q=80
+Red Bull,Cold Drinks,Popular canned energy drink (250 ml),120,https://images.unsplash.com/photo-1625772299849-227fb23907c1?w=400&q=80
+Sting,Cold Drinks,Sweet red energy drink (250 ml),20,https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400&q=80
+Mineral Water,Cold Drinks,Pure packaged drinking water (1 L),20,https://images.unsplash.com/photo-1523362628745-0c13750d176c?w=400&q=80
+Aloo Bhujia,Namkeen,Spicy potato noodle snack (250 g),60,https://images.unsplash.com/photo-1596662951497-6a7e0e7a8e83?w=400&q=80
+Mixture,Namkeen,Spicy mixed savory snack (250 g),70,https://images.unsplash.com/photo-1585237894569-8a587d4f9b8c?w=400&q=80
+Sev,Namkeen,Crispy chickpea flour noodles (250 g),50,https://images.unsplash.com/photo-1596662951497-6a7e0e7a8e83?w=400&q=80
+Ratlami Sev,Namkeen,Spicy thick gram flour noodles (250 g),80,https://images.unsplash.com/photo-1585237894569-8a587d4f9b8c?w=400&q=80
+Chana Dal,Namkeen,Crunchy fried split chickpeas (250 g),60,https://images.unsplash.com/photo-1596662951497-6a7e0e7a8e83?w=400&q=80
+Moong Dal,Namkeen,Salty fried yellow lentils (250 g),60,https://images.unsplash.com/photo-1585237894569-8a587d4f9b8c?w=400&q=80
+Salted Peanuts,Namkeen,Classic roasted salted peanuts (250 g),40,https://images.unsplash.com/photo-1596662951497-6a7e0e7a8e83?w=400&q=80
+Masala Peanuts,Namkeen,Spicy coated fried peanuts (250 g),50,https://images.unsplash.com/photo-1585237894569-8a587d4f9b8c?w=400&q=80
+Khatta Meetha Mix,Namkeen,Sweet and sour snack mix (250 g),75,https://images.unsplash.com/photo-1596662951497-6a7e0e7a8e83?w=400&q=80
