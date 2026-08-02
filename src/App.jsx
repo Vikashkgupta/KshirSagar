@@ -16,6 +16,9 @@ import SuccessModal from './components/modals/SuccessModal';
 import TimeWarningModal from './components/modals/TimeWarningModal';
 import CustomRequestModal from './components/modals/CustomRequestModal';
 
+// 1. Naya OfferManager import kar liya
+import OfferManager from './components/modals/OfferManager';
+
 function App() {
   return (
     <div id="landing" className="relative text-white font-playfair bg-bgDark dark:bg-bg-primary overflow-x-hidden min-h-screen">
@@ -45,6 +48,9 @@ function App() {
       <SuccessModal />
       <TimeWarningModal />
       <CustomRequestModal />
+      
+      {/* 2. Offer Popup ko Modals ke sath add kar diya */}
+      <OfferManager />
       
     </div>
   );
