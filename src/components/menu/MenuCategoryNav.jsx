@@ -4,7 +4,7 @@ import React from 'react';
 // Used purely to attach the correct Image & Emoji to dynamic Airtable categories
 const FALLBACK_CATEGORY_ASSETS = [
   { name: 'All', filter: 'all', img: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&q=80', emoji: '🍽️' },
-  { name: 'Pizza', filter: 'Pizza', img: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&q=80', emoji: '🍕' },
+  { name: 'Pizza', filter: 'Pizza', img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSbtlaU3Pd4Nto1VIagbKfhqb4lSDnavWJGOzyfShLCxkH8mPMmebUBAPs&s=10', emoji: '🍕' },
   { name: 'Chinese', filter: 'Chowmein', img: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400&q=80', emoji: '🍜' },
   { name: 'South Indian', filter: 'Dosa', img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&q=80', emoji: '🥞' },
   { name: 'Chilli Manchurian', filter: 'Chilli Manchurian', img: 'https://images.unsplash.com/photo-1603360946369-dc9bb6258143?w=400&q=80', emoji: '🌶️' },
@@ -12,12 +12,12 @@ const FALLBACK_CATEGORY_ASSETS = [
   { name: 'Rolls', filter: 'Rolls', img: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400&q=80', emoji: '🌯' },
   { name: 'Sandwich', filter: 'Sandwich', img: 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&q=80', emoji: '🥪' },
   { name: 'Burger', filter: 'Burger', img: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80', emoji: '🍔' },
-  { name: 'Snacks', filter: 'Snacks', img: '/img/snak.jpg', emoji: '🍟' },
-  { name: 'Sweets', filter: 'Sweets', img: '/img/sweet.jpg', emoji: '🍬' },
+  { name: 'Snacks', filter: 'Snacks', img: 'https://media.istockphoto.com/id/1263686908/photo/mixed-salty-snack-flat-lay-table-scene-on-a-wood-background.jpg?s=612x612&w=0&k=20&c=rCZ-gpvz--NpeNA0cYGCyJj3EK0kFUSkvdsow9u4I3o=', emoji: '🍟' },
+  { name: 'Sweets', filter: 'Sweets', img: 'https://t3.ftcdn.net/jpg/04/66/41/98/360_F_466419884_l0WxlXu6z1ImHiFvWXhpc75KgPNEHtVS.jpg', emoji: '🍬' },
   { name: 'Cakes', filter: 'Cakes', img: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80', emoji: '🎂' },
   { name: 'Bakery', filter: 'Bakery', img: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80', emoji: '🥐' },
   { name: 'Cold Drinks', filter: 'Cold Drinks', img: 'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80', emoji: '🥤' },
-  { name: 'Namkeen', filter: 'Namkeen', img: '/img/namkeen.jpg', emoji: '🥨' }
+  { name: 'Namkeen', filter: 'Namkeen', img: 'https://t4.ftcdn.net/jpg/02/08/38/95/360_F_208389537_XYn1ukJfse2kVLxJYJpiBcjEkAHrWfBt.jpg', emoji: '🥨' }
 ];
 
 const MenuCategoryNav = ({ activeCategory, setActiveCategory, dynamicCategories }) => {
@@ -33,7 +33,7 @@ const MenuCategoryNav = ({ activeCategory, setActiveCategory, dynamicCategories 
       filter: catName,
       name: catName === 'all' ? 'All' : catName,
       img: foundAsset ? foundAsset.img : 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&q=80', // Default image if new category added
-      emoji: foundAsset ? foundAsset.emoji : '✨'
+      emoji: foundAsset ? foundAsset.emoji : '🍴'
     };
   });
 

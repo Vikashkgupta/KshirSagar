@@ -102,7 +102,7 @@ const MenuSection = () => {
           onClick={() => dispatch(toggleCustomRequest(true))}
           className="py-[0.88rem] px-[2.2rem] bg-gold/10 border border-gold/50 rounded-full text-gold font-inter text-[0.9rem] font-bold tracking-[0.05em] backdrop-blur-md cursor-pointer transition-all duration-300 shadow-[0_0_25px_rgba(212,175,55,0.25)] hover:bg-gold/20 hover:shadow-[0_0_35px_rgba(212,175,55,0.45)] hover:-translate-y-[2px]"
         >
-          ✨ Request a Custom Dish
+          🍴 Request a Custom Dish
         </button>
       </div>
     </section>

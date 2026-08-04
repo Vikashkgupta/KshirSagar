@@ -153,7 +153,7 @@ const CartModal = () => {
 
           {/* Add-ons */}
           <div className="p-[1rem_1.4rem_0.5rem] border-t border-gold/10 bg-white/50 shrink-0 dark:bg-white/50">
-            <div className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-gold mb-[0.4rem]">✨ FREQUENTLY BOUGHT TOGETHER</div>
+            <div className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-gold mb-[0.4rem]">🍴 FREQUENTLY BOUGHT TOGETHER</div>
             <div className="flex gap-[0.6rem] overflow-x-auto pb-[0.5rem] no-scrollbar">
               {[
                 { name: 'Extra Sambhar', price: 20, emoji: '🍲' },

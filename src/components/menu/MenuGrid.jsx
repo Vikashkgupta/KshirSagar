@@ -16,9 +16,9 @@ const MenuGrid = ({ activeCategory, menuItems }) => {
     <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fit,minmax(min(100%,380px),1fr))] gap-[clamp(1rem,3vw,1.5rem)] px-[clamp(1rem,4vw,2.5rem)] pb-[clamp(2rem,6vw,4rem)] bg-white !important">
       {displayItems.map((menuObj, idx) => {
         // We ensure the category object has an emoji attached for the Card to use
-        // Fallback to ✨ if it's a brand new category created in Airtable
+        // Fallback to 🍴 if it's a brand new category created in Airtable
         if (!menuObj.cat.emoji) {
-          menuObj.cat.emoji = '✨'; 
+          menuObj.cat.emoji = '🍴'; 
         }
 
         return (
