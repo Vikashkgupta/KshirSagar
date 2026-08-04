@@ -13,7 +13,7 @@ export const getIngredientIcon = (name) => {
       return INGREDIENT_ICON_MAP[key];
     }
   }
-  return "✨";
+  return "🍴";
 };
 
 export const MENU = [

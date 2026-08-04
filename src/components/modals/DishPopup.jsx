@@ -143,7 +143,7 @@ const DishPopup = () => {
                   <div key={i} className="flex items-center justify-between gap-[0.8rem] pb-[0.85rem] border-b border-dashed border-gold/30 last:pb-0 last:border-none">
                     <span className="font-inter text-[0.9rem] font-bold text-[#222] uppercase tracking-[0.06em]">{v.label}</span>
                     <span className="font-inter text-[1.2rem] font-black text-[#111] ml-auto pr-[0.8rem]">{v.price}</span>
-                    <button onClick={() => handleAdd(v.price, v.label)} className="h-[50px] min-w-[120px] px-[1.7rem]  hover:from-[#A67C1F] hover:via-[#E2C15A] hover:to-[#A67C1F] border border-[#E7C86A] rounded-md text-white font-inter text-[0.82rem] font-extrabold tracking-[0.08em] cursor-pointer shadow-[0_8px_22px_rgba(212,175,55,0.32)] transition-all duration-300 flex items-center justify-center gap-[0.45rem] hover:-translate-y-[2px] hover:shadow-[0_12px_28px_rgba(212,175,55,0.42)] active:scale-[0.96]">
+                    <button onClick={() => handleAdd(v.price, v.label)} className="h-[50px] min-w-[120px] px-[1.7rem]  hover:from-[#A67C1F] hover:via-[#E2C15A] hover:to-[#A67C1F] border border-[#E7C86A] rounded-md text-black font-inter text-[0.82rem] font-extrabold tracking-[0.08em] cursor-pointer shadow-[0_8px_22px_rgba(212,175,55,0.32)] transition-all duration-300 flex items-center justify-center gap-[0.45rem] hover:-translate-y-[2px] hover:shadow-[0_12px_28px_rgba(212,175,55,0.42)] active:scale-[0.96]">
                       ADD
                     </button>
                   </div>
@@ -154,7 +154,7 @@ const DishPopup = () => {
                     <span className="font-inter text-[0.75rem] font-bold text-[#888] uppercase tracking-[0.08em] mb-[0.2rem]">Total Price</span>
                     <span className="font-inter text-[1.4rem] font-black text-[#111] leading-none">{item.price}</span>
                   </div>
-                  <button onClick={() => handleAdd(item.price, '')} className="h-[50px] px-[1.9rem] hover:from-[#A67C1F] hover:via-[#E2C15A] hover:to-[#A67C1F] border border-[#E7C86A] rounded-md text-white font-inter text-[0.85rem] font-extrabold tracking-[0.08em] cursor-pointer shadow-[0_8px_22px_rgba(212,175,55,0.32)] transition-all duration-300 uppercase flex items-center justify-center gap-[10px] hover:-translate-y-[2px] hover:shadow-[0_12px_30px_rgba(212,175,55,0.45)] active:scale-[0.96]">
+                  <button onClick={() => handleAdd(item.price, '')} className="h-[50px] px-[1.9rem] hover:from-[#A67C1F] hover:via-[#E2C15A] hover:to-[#A67C1F] border border-[#E7C86A] rounded-md text-black font-inter text-[0.85rem] font-extrabold tracking-[0.08em] cursor-pointer shadow-[0_8px_22px_rgba(212,175,55,0.32)] transition-all duration-300 uppercase flex items-center justify-center gap-[10px] hover:-translate-y-[2px] hover:shadow-[0_12px_30px_rgba(212,175,55,0.45)] active:scale-[0.96]">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
