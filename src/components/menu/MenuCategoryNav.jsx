@@ -3,7 +3,7 @@ import React from 'react';
 // KEPT AS BACKUP DICTIONARY ONLY - DO NOT DELETE
 // Used purely to attach the correct Image & Emoji to dynamic Airtable categories
 const FALLBACK_CATEGORY_ASSETS = [
-  { name: 'All', filter: 'all', img: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&q=80', emoji: '🍽️' },
+  { name: 'All', filter: 'all', img: 'https://mylifehomecare.co.uk/wp-content/uploads/sites/5/2025/11/Nutrition.jpg', emoji: '🍽️' },
   { name: 'Pizza', filter: 'Pizza', img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSbtlaU3Pd4Nto1VIagbKfhqb4lSDnavWJGOzyfShLCxkH8mPMmebUBAPs&s=10', emoji: '🍕' },
   { name: 'Chinese', filter: 'Chowmein', img: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400&q=80', emoji: '🍜' },
   { name: 'South Indian', filter: 'Dosa', img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&q=80', emoji: '🥞' },
