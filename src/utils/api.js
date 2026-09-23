@@ -1,7 +1,7 @@
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzT211Di3tn-Q7Afyv0VEX9wf9MrlKyWUu0znmMZuvTvTEnHdpurDcIB3MXSSAXwhDY/exec";
 
 export const submitOrderWebhook = (payload) => {
-  // Asynchronous "fire-and-forget" webhook POST
+  // Asynchronous "fire-and-forget" webhook POST for Google Sheets
   fetch(GOOGLE_SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
@@ -9,7 +9,25 @@ export const submitOrderWebhook = (payload) => {
       "Content-Type": "text/plain;charset=utf-8"
     },
     body: JSON.stringify(payload)
-  }).catch(err => console.error("Webhook error:", err));
+  }).catch(err => console.error("Google Webhook error:", err));
+
+  // POST to Netlify Function for Airtable
+  fetch('/.netlify/functions/submitOrder', {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(async (res) => {
+    const data = await res.json();
+    if (!res.ok) {
+      console.error("❌ Backend Error Details:", data);
+    } else {
+      console.log("✅ Order Saved Successfully:", data);
+    }
+  })
+  .catch(err => console.error("Netlify Function network error:", err));
 };
 
 export const generateWhatsAppLink = (payload, cartItems) => {
