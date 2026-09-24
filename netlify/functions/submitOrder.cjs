@@ -27,7 +27,7 @@ exports.handler = async (event) => {
 
     const record = {
       fields: {
-        "Order Date": new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), // Fixed column name & IST Time
+        "Time": new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), // Fixed column name & IST Time
         "Order Status": "Draft",
         "Customer Name": name || "Guest",
         "Customer Mobile": mobile || "",
