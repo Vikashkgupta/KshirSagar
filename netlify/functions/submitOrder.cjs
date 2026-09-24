@@ -6,11 +6,12 @@ exports.handler = async (event) => {
   try {
     const payload = JSON.parse(event.body);
     
-    // LINE 8 FIX: Safely extracting both 'instruction' and 'instructions'
+    // Safely extracting both 'instruction' and 'instructions'
     const { name, mobile, orderType, address, items, instruction, instructions, tip, total } = payload;
 
     const baseId = process.env.AIRTABLE_BASE_ID;
-    const tableName = process.env.AIRTABLE_TABLE_NAME; 
+    // YAHAN CHANGE KIYA HAI 👇 (Naya variable use kar rahe hain)
+    const tableName = process.env.AIRTABLE_ORDERS_TABLE; 
     const apiKey = process.env.AIRTABLE_TOKEN; 
 
     if (!baseId || !apiKey || !tableName) {
@@ -27,7 +28,7 @@ exports.handler = async (event) => {
 
     const record = {
       fields: {
-        "Time": new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), // Fixed column name & IST Time
+        "Time": new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
         "Order Status": "Draft",
         "Customer Name": name || "Guest",
         "Customer Mobile": mobile || "",
