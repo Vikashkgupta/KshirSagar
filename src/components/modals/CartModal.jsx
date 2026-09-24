@@ -81,7 +81,8 @@ const CartModal = () => {
       ...payload,
       orderType: orderType === 'Pickup' ? "Store Pickup" : "Delivery",
       address: orderType === 'Pickup' ? "N/A" : payload.address,
-      items: items.map(i => `  - ${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.qty}`).join('\n').trim(),
+      // ITEMS FORMATTING UPDATED HERE FOR CLEAN MULTI-LINE BULLET POINTS
+      items: items.map(i => `🔸 ${i.qty} x ${i.name}${i.variant ? ` (${i.variant})` : ''}`).join('\n'),
       instruction: payload.instructions || "None",
     };
 
