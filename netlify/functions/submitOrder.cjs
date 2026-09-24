@@ -5,7 +5,9 @@ exports.handler = async (event) => {
 
   try {
     const payload = JSON.parse(event.body);
-    const { name, mobile, orderType, address, items, instruction, tip, total } = payload;
+    
+    // LINE 8 FIX: Safely extracting both 'instruction' and 'instructions'
+    const { name, mobile, orderType, address, items, instruction, instructions, tip, total } = payload;
 
     const baseId = process.env.AIRTABLE_BASE_ID;
     const tableName = process.env.AIRTABLE_TABLE_NAME; 
@@ -18,21 +20,21 @@ exports.handler = async (event) => {
 
     const airtableUrl = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
 
-    // EXACT MATCH WITH AIRTABLE COLUMNS
-    // Parsing numbers carefully to avoid Airtable 422 errors
     const parsedTip = tip ? parseFloat(tip) : 0;
     const parsedTotal = total ? parseFloat(total) : 0;
+    // Handling undefined cooking notes gracefully
+    const cookingNotes = instruction || instructions || "None";
 
     const record = {
       fields: {
-        "Order Date/Time": new Date().toISOString(),
+        "Order Date": new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), // Fixed column name & IST Time
         "Order Status": "Draft",
         "Customer Name": name || "Guest",
         "Customer Mobile": mobile || "",
         "Order Type": orderType || "Delivery",
         "Address": address || "N/A",
         "Order Items": items || "",
-        "Cooking Notes": instruction || "None",
+        "Cooking Notes": cookingNotes,
         "Tip": parsedTip,
         "Order Total": parsedTotal
       }
