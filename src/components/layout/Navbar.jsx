@@ -6,7 +6,7 @@ import { restoreLastOrder } from '../../store/cartSlice';
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showReorder, setShowReorder] = useState(false);
-  
+
   const dispatch = useDispatch();
   const cartItems = useSelector(state => state.cart.items);
   const totalQty = cartItems.reduce((acc, item) => acc + item.qty, 0);
@@ -32,9 +32,8 @@ const Navbar = () => {
   };
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-[200] px-4 md:px-10 py-3 md:py-[0.9rem] flex justify-between items-center transition-all duration-350 ${
-      isScrolled ? 'bg-bgDark/93 backdrop-blur-xl border-b border-gold/10' : ''
-    }`}>
+    <nav className={`fixed top-0 left-0 right-0 z-[200] px-4 md:px-10 py-3 md:py-[0.9rem] flex justify-between items-center transition-all duration-350 ${isScrolled ? 'bg-bgDark/93 backdrop-blur-xl border-b border-gold/10' : ''
+      }`}>
       <a href="/" className="flex items-center no-underline text-gold font-playfair font-black text-xl md:text-2xl tracking-wide">
         <img src="/logo.png" alt="Kshirsagar Logo" className="h-[45px] md:h-[55px] object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
         <span className="hidden">Kshirsagar</span>
@@ -58,13 +57,13 @@ const Navbar = () => {
           </button>
         )}
 
-        <button 
+        <button
           onClick={() => dispatch(toggleCart())}
-          className="hidden md:flex items-center gap-2 px-[18px] py-[10px] border border-gold rounded-full text-gold font-semibold transition-all duration-300 hover:bg-gold hover:text-white hover:shadow-gold-glow bg-transparent cursor-pointer"
+          className="hidden md:flex items-center gap-2 px-[18px] py-[10px] border border-[#E79227] rounded-full text-[#E79227] font-semibold transition-all duration-300 hover:bg-[#E79227] hover:text-white hover:shadow-[0_0_20px_rgba(231,146,39,0.35)] bg-transparent cursor-pointer"
         >
           🛒 My Cart
           {totalQty > 0 && (
-            <span className="min-w-[20px] h-[20px] rounded-full bg-gold text-white text-[12px] font-bold flex items-center justify-center">
+            <span className="min-w-[20px] h-[20px] rounded-full bg-[#E79227] text-white text-[12px] font-bold flex items-center justify-center">
               {totalQty > 99 ? '99+' : totalQty}
             </span>
           )}
