@@ -36,7 +36,7 @@ const CustomRequestModal = () => {
     const msg = ` *CUSTOM REQUEST* \n\n👤 Name: ${name.trim()}\n📱 Mobile: ${mobile.trim()}\n📝 Details: ${desc.trim()}`;
     
     dispatch(toggleCustomRequest(false));
-    window.open('https://wa.me/919931890824?text=' + encodeURIComponent(msg), '_blank');
+    window.open('https://wa.me/918226935738?text=' + encodeURIComponent(msg), '_blank');
     
     setName(''); setMobile(''); setDesc('');
   };

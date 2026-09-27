@@ -71,5 +71,5 @@ export const generateWhatsAppLink = (payload, cartItems) => {
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `*NEXT STEP:* Our restaurant staff will review your order and share the final price details, including any applicable delivery charges, shortly.`;
 
-  return `https://wa.me/919931890824?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/918226935738?text=${encodeURIComponent(msg)}`;
 };
