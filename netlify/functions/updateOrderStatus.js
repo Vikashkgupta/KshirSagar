@@ -18,7 +18,12 @@ export const handler = async (event) => {
     }
 
     const airtableUrl = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${id}`;
-    const airtableStatusValue = status === "Completed" ? "Completed" : "Draft";
+    
+    // Map status values for Airtable
+    let airtableStatusValue = "Draft";
+    if (status === "Completed") airtableStatusValue = "Completed";
+    else if (status === "Cancelled") airtableStatusValue = "Cancelled";
+    else airtableStatusValue = "Draft";
 
     const response = await fetch(airtableUrl, {
       method: 'PATCH',
