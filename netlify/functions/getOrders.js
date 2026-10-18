@@ -32,7 +32,6 @@ export const handler = async (event) => {
     const orders = (data.records || []).map((rec) => {
       const f = rec.fields || {};
 
-      // Parse items from the exact "Order Items" multi-line text column
       const rawItems = (f["Order Items"] || "").split('\n').map(s => s.trim()).filter(Boolean);
       const parsedItems = rawItems.map(line => {
         const cleanLine = line.replace(/^[-🔸•*]\s*/, '');
@@ -43,9 +42,16 @@ export const handler = async (event) => {
         return { name: cleanLine, variant: '', qty: 1 };
       });
 
-      // Airtable uses "Draft" for pending orders based on your table screenshot
+      // Proper Status Mapping for Pending, Completed, and Cancelled
       const rawStatus = f["Order Status"] || "Draft";
-      const mappedStatus = rawStatus === "Completed" ? "Completed" : "Pending";
+      let mappedStatus = "Pending";
+      if (rawStatus === "Completed") {
+        mappedStatus = "Completed";
+      } else if (rawStatus === "Cancelled") {
+        mappedStatus = "Cancelled";
+      } else {
+        mappedStatus = "Pending"; // "Draft" or anything else goes to Pending
+      }
 
       const total = parseFloat(f["Order Total"]) || 0;
       const tip = parseFloat(f["Tip"]) || 0;
@@ -63,7 +69,7 @@ export const handler = async (event) => {
         items: parsedItems,
         tip: tip,
         total: total,
-        paymentStatus: "Unpaid", // Airtable column not required for basic display
+        paymentStatus: "Unpaid",
         orderStatus: mappedStatus,
         notes: f["Cooking Notes"] && f["Cooking Notes"] !== "None" ? f["Cooking Notes"] : ""
       };
