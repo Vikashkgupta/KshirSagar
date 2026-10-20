@@ -71,6 +71,20 @@
             font-weight: 700;
             font-size: 0.85rem;
         }
+        .btn-report {
+            background: #fff;
+            color: var(--primary-green);
+            border: 1px solid var(--accent-gold);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+        .btn-report:disabled, .btn-refresh:disabled { opacity: .6; cursor: wait; }
+        @media (max-width: 520px) {
+            .header-controls { width: 100%; flex-wrap: wrap; gap: .5rem; }
+            .header-controls button { flex: 1; }
+        }
 
         /* Summary Cards */
         .summary-grid {
@@ -207,6 +221,7 @@
         </div>
         <div class="header-controls">
             <span id="conn-status" style="font-size: 0.75rem; background: rgba(255,255,255,0.15); padding: 0.25rem 0.5rem; border-radius: 99px;">Loading...</span>
+            <button class="btn-report" id="btn-report">⬇ Download Revenue PDF</button>
             <button class="btn-refresh" id="btn-refresh">↻ Refresh</button>
         </div>
     </header>
@@ -388,6 +403,148 @@
             };
 
             window.handleStatus = (id, status) => updateStatus(id, status);
+
+            // Revenue report uses jsPDF loaded on demand; no Airtable token is exposed in the browser.
+            const loadJsPDF = () => new Promise((resolve, reject) => {
+                if (window.jspdf && window.jspdf.jsPDF) return resolve(window.jspdf.jsPDF);
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                script.onload = () => window.jspdf?.jsPDF ? resolve(window.jspdf.jsPDF) : reject(new Error('PDF library did not load'));
+                script.onerror = () => reject(new Error('Could not load PDF library. Check your internet connection and try again.'));
+                document.head.appendChild(script);
+            });
+
+            const getOrderDate = (order) => {
+                // Airtable createdAt is a reliable ISO timestamp. Use Time only as a fallback.
+                const candidate = order.createdAt || order.displayTime;
+                if (!candidate) return null;
+                const date = new Date(candidate);
+                return Number.isNaN(date.getTime()) ? null : date;
+            };
+
+            const dateKeyIST = (date) => new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).format(date);
+            const monthKeyIST = (date) => dateKeyIST(date).slice(0, 7);
+            const monthLabel = (key) => {
+                const [year, month] = key.split('-').map(Number);
+                return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-IN', {
+                    month: 'long', year: 'numeric', timeZone: 'UTC'
+                });
+            };
+            const money = (value) => 'Rs. ' + (Number(value) || 0).toLocaleString('en-IN', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+            const safeText = (value) => String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
+
+            const addPdfLine = (doc, text, options = {}) => {
+                const margin = 14;
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const maxWidth = pageWidth - margin * 2;
+                const lines = doc.splitTextToSize(String(text), maxWidth);
+                const lineHeight = options.lineHeight || 5;
+                if (options.bold) doc.setFont('helvetica', 'bold');
+                else doc.setFont('helvetica', 'normal');
+                if (options.size) doc.setFontSize(options.size);
+                lines.forEach(line => {
+                    if (doc._reportY > doc.internal.pageSize.getHeight() - 16) {
+                        doc.addPage();
+                        doc._reportY = 16;
+                    }
+                    doc.text(line, margin, doc._reportY);
+                    doc._reportY += lineHeight;
+                });
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                if (options.gap) doc._reportY += options.gap;
+            };
+
+            const downloadRevenuePdf = async () => {
+                const button = document.getElementById('btn-report');
+                button.disabled = true;
+                button.textContent = 'Preparing PDF...';
+                try {
+                    // Refresh data immediately before generating the report.
+                    const res = await fetch('/.netlify/functions/getOrders');
+                    if (!res.ok) throw new Error('Could not load orders from the server. Please refresh and retry.');
+                    const data = await res.json();
+                    const allOrders = Array.isArray(data.orders) ? data.orders : [];
+                    const completed = allOrders
+                        .filter(o => o.orderStatus === 'Completed')
+                        .map(o => ({ ...o, reportDate: getOrderDate(o), amount: Number(o.total) || 0, tipAmount: Number(o.tip) || 0 }))
+                        .filter(o => o.reportDate)
+                        .sort((a, b) => b.reportDate - a.reportDate);
+
+                    const JsPDF = await loadJsPDF();
+                    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+                    doc.setProperties({ title: 'Kshirsagar Completed Orders and Revenue Report', subject: 'Completed orders only' });
+                    doc._reportY = 16;
+                    const now = new Date();
+                    const todayKey = dateKeyIST(now);
+                    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    const yesterdayKey = dateKeyIST(yesterday);
+                    const thisMonthKey = monthKeyIST(now);
+                    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    const prevMonthKey = monthKeyIST(prevMonthDate);
+                    const sum = list => list.reduce((total, order) => total + order.amount, 0);
+                    const todayOrders = completed.filter(o => dateKeyIST(o.reportDate) === todayKey);
+                    const yesterdayOrders = completed.filter(o => dateKeyIST(o.reportDate) === yesterdayKey);
+                    const thisMonthOrders = completed.filter(o => monthKeyIST(o.reportDate) === thisMonthKey);
+                    const lastMonthOrders = completed.filter(o => monthKeyIST(o.reportDate) === prevMonthKey);
+
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(17);
+                    doc.text('Kshirsagar Sweets & Bakers', 14, doc._reportY);
+                    doc._reportY += 8;
+                    doc.setFontSize(12);
+                    doc.text('Completed Orders & Revenue Report', 14, doc._reportY);
+                    doc._reportY += 6;
+                    addPdfLine(doc, 'Generated: ' + now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' (IST)', { size: 8, gap: 3 });
+                    addPdfLine(doc, 'REPORT TOTALS', { bold: true, size: 12, gap: 1 });
+                    addPdfLine(doc, 'Lifetime revenue: ' + money(sum(completed)));
+                    addPdfLine(doc, 'Completed orders: ' + completed.length);
+                    addPdfLine(doc, 'Today (' + todayKey + '): ' + money(sum(todayOrders)) + ' | Orders: ' + todayOrders.length);
+                    addPdfLine(doc, 'Yesterday (' + yesterdayKey + '): ' + money(sum(yesterdayOrders)) + ' | Orders: ' + yesterdayOrders.length);
+                    addPdfLine(doc, 'This month (' + monthLabel(thisMonthKey) + '): ' + money(sum(thisMonthOrders)) + ' | Orders: ' + thisMonthOrders.length);
+                    addPdfLine(doc, 'Last month (' + monthLabel(prevMonthKey) + '): ' + money(sum(lastMonthOrders)) + ' | Orders: ' + lastMonthOrders.length, { gap: 4 });
+                    addPdfLine(doc, 'MONTH-BY-MONTH SUMMARY', { bold: true, size: 12, gap: 1 });
+
+                    const months = new Map();
+                    completed.forEach(order => {
+                        const key = monthKeyIST(order.reportDate);
+                        if (!months.has(key)) months.set(key, []);
+                        months.get(key).push(order);
+                    });
+                    const monthKeys = [...months.keys()].sort((a, b) => b.localeCompare(a));
+                    if (!monthKeys.length) addPdfLine(doc, 'No Completed orders with a valid date were found.', { gap: 3 });
+                    monthKeys.forEach(key => {
+                        const list = months.get(key);
+                        addPdfLine(doc, monthLabel(key) + ' — ' + money(sum(list)) + ' | ' + list.length + ' orders', { bold: true, gap: 1 });
+                        list.forEach(order => {
+                            const date = dateKeyIST(order.reportDate);
+                            const itemText = Array.isArray(order.items) && order.items.length
+                                ? order.items.map(i => `${safeText(i.name)}${i.variant ? ' (' + safeText(i.variant) + ')' : ''} x${Number(i.qty) || 1}`).join(', ')
+                                : 'Items not available';
+                            addPdfLine(doc, `${date} | ${safeText(order.orderNumber)} | ${safeText(order.customerName || 'Guest')} | ${safeText(order.customerMobile || 'No mobile')} | ${safeText(order.orderType || '')}`);
+                            addPdfLine(doc, 'Items: ' + itemText);
+                            addPdfLine(doc, 'Tip: ' + money(order.tipAmount) + ' | Order Total: ' + money(order.amount), { gap: 2 });
+                        });
+                        addPdfLine(doc, 'Subtotal for ' + monthLabel(key) + ': ' + money(sum(list)), { bold: true, gap: 4 });
+                    });
+
+                    const filename = 'Kshirsagar_Completed_Revenue_' + todayKey + '.pdf';
+                    doc.save(filename);
+                    showToast('Revenue PDF downloaded. Completed orders only.');
+                } catch (err) {
+                    console.error('Revenue PDF error:', err);
+                    showToast(err.message || 'Could not create PDF. Please try again.');
+                } finally {
+                    button.disabled = false;
+                    button.textContent = '⬇ Download Revenue PDF';
+                }
+            };
+
+            document.getElementById('btn-report').addEventListener('click', downloadRevenuePdf);
 
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.addEventListener('click', (e) => {

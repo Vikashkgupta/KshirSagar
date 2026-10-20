@@ -1,6 +1,10 @@
+
 export const handler = async (event) => {
   if (event.httpMethod !== 'GET') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return {
+      statusCode: 405,
+      body: 'Method Not Allowed'
+    };
   }
 
   try {
@@ -9,80 +13,136 @@ export const handler = async (event) => {
     const apiKey = process.env.AIRTABLE_TOKEN;
 
     if (!baseId || !apiKey || !tableName) {
-      return { statusCode: 500, body: JSON.stringify({ error: "Missing Airtable environment variables" }) };
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: 'Missing Airtable environment variables'
+        })
+      };
     }
 
-    const airtableUrl = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
+    const airtableUrl =
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
 
-    const response = await fetch(airtableUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Fetch ALL records using Airtable pagination.
+    const records = [];
+    let offset;
+
+    do {
+      const url = new URL(airtableUrl);
+      url.searchParams.set('pageSize', '100');
+
+      if (offset) {
+        url.searchParams.set('offset', offset);
       }
-    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return { statusCode: response.status, body: JSON.stringify({ error: "Airtable fetch failed", details: errText }) };
-    }
-
-    const data = await response.json();
-
-    const orders = (data.records || []).map((rec) => {
-      const f = rec.fields || {};
-
-      const rawItems = (f["Order Items"] || "").split('\n').map(s => s.trim()).filter(Boolean);
-      const parsedItems = rawItems.map(line => {
-        const cleanLine = line.replace(/^[-🔸•*]\s*/, '');
-        const match = cleanLine.match(/^(.*?)(?:\s*\((.*?)\))?\s*x\s*(\d+)$/i);
-        if (match) {
-          return { name: match[1].trim(), variant: match[2] ? match[2].trim() : '', qty: parseInt(match[3], 10) || 1 };
-        }
-        return { name: cleanLine, variant: '', qty: 1 };
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers
       });
 
-      // Proper Status Mapping for Pending, Completed, and Cancelled
-      const rawStatus = f["Order Status"] || "Draft";
-      let mappedStatus = "Pending";
-      if (rawStatus === "Completed") {
-        mappedStatus = "Completed";
-      } else if (rawStatus === "Cancelled") {
-        mappedStatus = "Cancelled";
-      } else {
-        mappedStatus = "Pending"; // "Draft" or anything else goes to Pending
+      if (!response.ok) {
+        const errText = await response.text();
+
+        console.error('Airtable fetch failed:', response.status, errText);
+
+        return {
+          statusCode: response.status,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            error: 'Airtable fetch failed'
+          })
+        };
       }
 
-      const total = parseFloat(f["Order Total"]) || 0;
-      const tip = parseFloat(f["Tip"]) || 0;
+      const data = await response.json();
+      records.push(...(data.records || []));
+      offset = data.offset;
+    } while (offset);
+
+    const orders = records.map((rec) => {
+      const f = rec.fields || {};
+
+      const rawItems = String(f['Order Items'] || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const parsedItems = rawItems.map((line) => {
+        const cleanLine = line.replace(/^[-🔸•*]\s*/, '');
+        const match = cleanLine.match(
+          /^(.*?)(?:\s*\((.*?)\))?\s*x\s*(\d+)$/i
+        );
+
+        if (match) {
+          return {
+            name: match[1].trim(),
+            variant: match[2] ? match[2].trim() : '',
+            qty: parseInt(match[3], 10) || 1
+          };
+        }
+
+        return {
+          name: cleanLine,
+          variant: '',
+          qty: 1
+        };
+      });
+
+      const rawStatus = f['Order Status'] || 'Draft';
+
+      let mappedStatus = 'Pending';
+
+      if (rawStatus === 'Completed') {
+        mappedStatus = 'Completed';
+      } else if (rawStatus === 'Cancelled') {
+        mappedStatus = 'Cancelled';
+      }
 
       return {
         id: rec.id,
         orderNumber: `#KS-${rec.id.slice(-4).toUpperCase()}`,
         createdAt: rec.createdTime,
-        displayTime: f["Time"] || "",
-        customerName: f["Customer Name"] || "Guest",
-        customerMobile: String(f["Customer Mobile"] || ""),
-        customerEmail: f["Customer Email"] || "",
-        orderType: String(f["Order Type"] || "Delivery"),
-        address: f["Address"] || "N/A",
+        displayTime: f['Time'] || '',
+        customerName: f['Customer Name'] || 'Guest',
+        customerMobile: String(f['Customer Mobile'] || ''),
+        customerEmail: f['Customer Email'] || '',
+        orderType: String(f['Order Type'] || 'Delivery'),
+        address: f['Address'] || 'N/A',
         items: parsedItems,
-        tip: tip,
-        total: total,
-        paymentStatus: "Unpaid",
+        tip: parseFloat(f['Tip']) || 0,
+        total: parseFloat(f['Order Total']) || 0,
+        paymentStatus: 'Unpaid',
         orderStatus: mappedStatus,
-        notes: f["Cooking Notes"] && f["Cooking Notes"] !== "None" ? f["Cooking Notes"] : ""
+        notes:
+          f['Cooking Notes'] && f['Cooking Notes'] !== 'None'
+            ? f['Cooking Notes']
+            : ''
       };
     });
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+      },
       body: JSON.stringify({ orders })
     };
-
   } catch (error) {
-    console.error("getOrders Error:", error);
-    return { statusCode: 500, body: JSON.stringify({ error: "Internal Server Error" }) };
+    console.error('getOrders Error:', error);
+
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: 'Internal Server Error'
+      })
+    };
   }
 };
