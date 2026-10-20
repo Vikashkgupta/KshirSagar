@@ -7,58 +7,62 @@ import { submitOrderWebhook, generateWhatsAppLink } from '../../utils/api';
 const TimeWarningModal = () => {
   const dispatch = useDispatch();
   const { isTimeWarningOpen } = useSelector(state => state.ui);
-  
-  // Need to pull cart state to execute order if they click "Send Anyway"
   const cartState = useSelector(state => state.cart);
 
   const handleSendAnyway = () => {
-    // We assume validation passed before this modal opened
     const totalQty = cartState.items.reduce((s, i) => s + i.qty, 0);
-    if(totalQty === 0) return;
+    if (totalQty === 0) return;
 
     const baseTotal = cartState.items.reduce((s, i) => s + i.price * i.qty, 0);
     const grandTotal = baseTotal + cartState.tip;
     
-    // Fallback payload values (since they are in the DOM or state in CartModal)
-    // For a perfect React architecture, these should ideally live in Redux or Context, 
-    // but we can execute with a generalized payload for the "Send Anyway" bypass.
     const nameEl = document.getElementById('cart-name');
     const mobileEl = document.getElementById('cart-mobile');
     const addressEl = document.getElementById('cart-address');
     const instEl = document.getElementById('cart-instructions');
+    const emailEl = document.getElementById('cart-email');
     
     const payload = {
-      name: nameEl?.value || 'Customer',
-      mobile: mobileEl?.value.replace(/\D/g, '') || '',
-      address: addressEl?.value || '',
-      instructions: instEl?.value || '',
+      name: nameEl?.value?.trim() || 'Customer',
+      mobile: mobileEl?.value?.replace(/\D/g, '') || '',
+      address: addressEl?.value?.trim() || '',
+      instructions: instEl?.value?.trim() || '',
       total: grandTotal,
       tip: cartState.tip,
-      orderType: cartState.orderType
+      orderType: cartState.orderType,
+      customerEmail: emailEl?.value?.trim() || ''
     };
 
     const webhookPayload = {
       ...payload,
       orderType: payload.orderType === 'Pickup' ? "Store Pickup" : "Delivery",
       address: payload.orderType === 'Pickup' ? "N/A" : payload.address,
-      items: cartState.items.map(i => `  - ${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.qty}`).join('\n').trim(),
+      items: cartState.items.map(i => `🔸 ${i.qty} x ${i.name}${i.variant ? ` (${i.variant})` : ''}`).join('\n').trim(),
       instruction: payload.instructions || "None",
+      customerEmail: payload.customerEmail
     };
 
     submitOrderWebhook(webhookPayload);
     const waLink = generateWhatsAppLink(payload, cartState.items);
     
+    // Clear inputs after sending
+    if (nameEl) nameEl.value = '';
+    if (mobileEl) mobileEl.value = '';
+    if (addressEl) addressEl.value = '';
+    if (instEl) instEl.value = '';
+    if (emailEl) emailEl.value = '';
+
     dispatch(clearCart());
     dispatch(toggleTimeWarning(false));
     dispatch(toggleCart(false));
     dispatch(toggleSuccessModal(true));
+
     window.open(waLink, '_blank');
   };
 
   const hour = new Date().getHours();
   const isMorning = hour < 10;
-  
-  const title = isMorning ? '☀️ Morning! Kitchen Opens at 10 AM' : '🌙 Store is Closed';
+  const title = isMorning ? '🌅 Morning! Kitchen Opens at 10 AM' : '🌙 Store is Closed';
   const desc = isMorning 
     ? "Namaskar! Our kitchen opens at 10:00 AM. Send your order now and we'll prepare it fresh at opening. Proceed?"
     : "Store is currently closed. We'll be back at 10:00 AM. Send order for tomorrow?";

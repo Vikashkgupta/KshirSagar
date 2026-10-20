@@ -34,9 +34,7 @@ const CartModal = () => {
         dispatch(toggleCart(false));
       }
     };
-
     window.addEventListener('keydown', handleEsc);
-
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isCartOpen, dispatch]);
 
@@ -44,15 +42,12 @@ const CartModal = () => {
     if (ref.current) {
       ref.current.classList.remove('animate-[shake_0.4s_ease]');
       void ref.current.offsetWidth;
-
       ref.current.classList.add(
         'animate-[shake_0.4s_ease]',
         '!border-[#e57373]',
         '!shadow-[0_0_0_3px_rgba(229,57,53,0.1)]'
       );
-
       ref.current.focus();
-
       setTimeout(() => {
         if (ref.current) {
           ref.current.classList.remove(
@@ -86,13 +81,9 @@ const CartModal = () => {
       hasError = true;
     }
 
-    // Email validation only when user selected email option
     if (wantEmail) {
       const emailRaw = email.trim();
-
-      const emailPattern =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRaw || !emailPattern.test(emailRaw)) {
         shakeField(emailRef);
         hasError = true;
@@ -102,13 +93,8 @@ const CartModal = () => {
     if (hasError) return;
 
     const h = new Date().getHours();
-
     if (h < 10 || h >= 20) {
       dispatch(toggleTimeWarning(true));
-
-      // In a real implementation, you'd store the pending payload
-      // in state and fire it from the TimeWarningModal if they click
-      // "Send Anyway"
     } else {
       executeOrder();
     }
@@ -123,51 +109,29 @@ const CartModal = () => {
       total: grandTotal,
       tip,
       orderType,
-
-      // Email will be empty when the customer doesn't select the option
       customerEmail: wantEmail ? email.trim() : ''
     };
 
     const webhookPayload = {
       ...payload,
-
-      orderType: orderType === 'Pickup'
-        ? 'Store Pickup'
-        : 'Delivery',
-
-      address: orderType === 'Pickup'
-        ? 'N/A'
-        : payload.address,
-
+      orderType: orderType === 'Pickup' ? 'Store Pickup' : 'Delivery',
+      address: orderType === 'Pickup' ? 'N/A' : payload.address,
       items: items
-        .map(
-          i =>
-            `🔸 ${i.qty} x ${i.name}${
-              i.variant ? ` (${i.variant})` : ''
-            }`
-        )
+        .map(i => `🔸 ${i.qty} x ${i.name}${i.variant ? ` (${i.variant})` : ''}`)
         .join('\n'),
-
       instruction: payload.instructions || 'None',
-
-      // Explicit email field for Airtable / automation
       customerEmail: wantEmail ? email.trim() : ''
     };
 
     submitOrderWebhook(webhookPayload);
-
     const waLink = generateWhatsAppLink(payload, items);
 
-    // Clear cart
     dispatch(clearCart());
 
-    // Reset form
     setName('');
     setMobile('');
     setAddress('');
     setInstructions('');
-
-    // Reset email option
     setWantEmail(false);
     setEmail('');
 
@@ -197,13 +161,11 @@ const CartModal = () => {
           : 'opacity-0 pointer-events-none'
       }`}
     >
-      {/* Overlay Click */}
       <div
         className="absolute inset-0 z-0"
         onClick={() => dispatch(toggleCart(false))}
       />
 
-      {/* Modal Drawer */}
       <div
         className={`relative z-10 w-full md:w-[440px] max-w-[100vw] h-[100dvh] max-h-[100dvh] bg-gradient-to-br from-[#120e08]/97 to-[#0a0804]/99 border-t md:border-t-0 md:border-l border-[#E79227]/18 shadow-[-8px_0_60px_rgba(0,0,0,0.6),-2px_0_20px_rgba(231,146,39,0.06)] flex flex-col pt-[env(safe-area-inset-top,0px)] transition-transform duration-350 cubic-bezier(0.22,1,0.36,1) ${
           isCartOpen
@@ -221,7 +183,6 @@ const CartModal = () => {
                 : ''}
             </span>
           </div>
-
           <button
             onClick={() => dispatch(toggleCart(false))}
             className="w-[34px] h-[34px] rounded-full border border-white/10 bg-white/5 text-[#888] flex items-center justify-center cursor-pointer transition-colors hover:bg-[#E79227]/12 hover:text-[#E79227] dark:border-black/10 dark:bg-black/5"
@@ -231,15 +192,11 @@ const CartModal = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto cart-scroll flex flex-col">
-
           {/* Cart Items */}
           <div className="p-[0.8rem_1.2rem] flex-1">
             {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-[3rem] px-[2rem] gap-[0.8rem] text-[#3a3a3a] font-inter text-center dark:text-[#bbb]">
-                <div className="text-[3.5rem] opacity-40">
-                  🍽️
-                </div>
-
+                <div className="text-[3.5rem] opacity-40">🛒</div>
                 <p className="text-[0.85rem] leading-[1.6]">
                   Your cart is empty.
                   <br />
@@ -260,13 +217,11 @@ const CartModal = () => {
                     <div className="font-playfair text-[0.88rem] text-[#4b4846] font-bold whitespace-nowrap overflow-hidden text-ellipsis dark:text-[#1a1a1a]">
                       {item.name}
                     </div>
-
                     {item.variant && (
                       <div className="font-inter text-[0.68rem] text-[#E79227] mt-[0.12rem]">
                         {item.variant}
                       </div>
                     )}
-
                     <div className="font-inter text-[0.78rem] text-[#666161] mt-[0.14rem]">
                       ₹{item.price} each
                     </div>
@@ -327,41 +282,17 @@ const CartModal = () => {
           {/* Add-ons */}
           <div className="p-[1rem_1.4rem_0.5rem] border-t border-[#E79227]/10 bg-white/50 shrink-0 dark:bg-white/50">
             <div className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem]">
-              🍴 FREQUENTLY BOUGHT TOGETHER
+              ✨ FREQUENTLY BOUGHT TOGETHER
             </div>
 
             <div className="flex gap-[0.6rem] overflow-x-auto pb-[0.5rem] no-scrollbar">
               {[
-                {
-                  name: 'Extra Sambhar',
-                  price: 5,
-                  emoji: '🍲'
-                },
-                {
-                  name: 'Extra Pav',
-                  price: 5,
-                  emoji: '🍞'
-                },
-                {
-                  name: 'Extra Chutney',
-                  price: 2,
-                  emoji: '🥣'
-                },
-                {
-                  name: 'Extra Onion',
-                  price: 2,
-                  emoji: '🧅'
-                },
-                {
-                  name: 'Extra Salad',
-                  price: 5,
-                  emoji: '🥗'
-                },
-                {
-                  name: 'Extra Green Chilli',
-                  price: 2,
-                  emoji: '🌶️'
-                }
+                { name: 'Extra Sambhar', price: 5, emoji: '🥣' },
+                { name: 'Extra Pav', price: 5, emoji: '🍞' },
+                { name: 'Extra Chutney', price: 2, emoji: '🌿' },
+                { name: 'Extra Onion', price: 2, emoji: '🧅' },
+                { name: 'Extra Salad', price: 5, emoji: '🥗' },
+                { name: 'Extra Green Chilli', price: 2, emoji: '🌶️' }
               ].map((addon) => (
                 <div
                   key={addon.name}
@@ -370,18 +301,12 @@ const CartModal = () => {
                   <div className="text-[0.75rem] text-[#7b6e65] font-inter font-semibold whitespace-nowrap overflow-hidden text-ellipsis dark:text-[#333]">
                     {addon.name}
                   </div>
-
                   <div className="text-[0.7rem] text-[#E79227] font-inter font-bold">
                     ₹{addon.price}
                   </div>
-
                   <button
                     onClick={() =>
-                      handleAddon(
-                        addon.name,
-                        addon.price,
-                        addon.emoji
-                      )
+                      handleAddon(addon.name, addon.price, addon.emoji)
                     }
                     className="bg-[#E79227]/10 border border-[#E79227]/30 text-[#E79227] rounded-md p-[0.3rem] text-[0.65rem] font-bold transition-colors hover:bg-[#E79227]/20"
                   >
@@ -394,37 +319,32 @@ const CartModal = () => {
 
           {/* Checkout Footer */}
           <div className="shrink-0 p-[1rem_1.4rem_1.3rem] bg-white/70 pb-[calc(85px+env(safe-area-inset-bottom,0px))] md:pb-[1.3rem] dark:bg-white/50">
-
             {/* ORDER TYPE */}
             <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] block">
-              🚚 ORDER TYPE
+              🛵 ORDER TYPE
             </label>
 
             <div className="flex gap-[0.5rem] mb-[0.8rem]">
               <button
-                onClick={() =>
-                  dispatch(setOrderType('Delivery'))
-                }
+                onClick={() => dispatch(setOrderType('Delivery'))}
                 className={`flex-1 p-[0.6rem] rounded-lg border font-inter text-[0.8rem] font-semibold transition-colors ${
                   orderType === 'Delivery'
                     ? 'bg-[#E79227]/10 border-[#E79227] text-[#E79227]'
                     : 'bg-white/5 border-[#E79227]/30 text-[#4A4A4A] dark:bg-black/5 dark:text-[#555]'
                 }`}
               >
-                🛵 Delivery
+                🚚 Delivery
               </button>
 
               <button
-                onClick={() =>
-                  dispatch(setOrderType('Pickup'))
-                }
+                onClick={() => dispatch(setOrderType('Pickup'))}
                 className={`flex-1 p-[0.6rem] rounded-lg border font-inter text-[0.8rem] font-semibold transition-colors ${
                   orderType === 'Pickup'
                     ? 'bg-[#E79227]/10 border-[#E79227] text-[#E79227]'
                     : 'bg-white/5 border-[#E79227]/30 text-[#4A4A4A] dark:bg-black/5 dark:text-[#555]'
                 }`}
               >
-                🛍️ Store Pickup
+                🏪 Store Pickup
               </button>
             </div>
 
@@ -432,22 +352,22 @@ const CartModal = () => {
             <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] mt-[0.8rem] block">
               👤 NAME *
             </label>
-
             <input
+              id="cart-name"
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               type="text"
               className="w-full bg-white/5 border border-[#E79227]/20 rounded-[10px] text-[#393939] font-inter text-[0.82rem] p-[0.65rem_0.9rem] outline-none transition-all placeholder:text-[#9f9e9e] focus:border-[#E79227]/55 focus:shadow-[0_0_0_3px_rgba(231,146,39,0.06)] dark:bg-black/5 dark:border-[#E79227]/30 dark:text-[#1a1a1a] dark:placeholder:text-[#bbb]"
-              placeholder="Enter your name…"
+              placeholder="Enter your name"
             />
 
             {/* MOBILE */}
             <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] mt-[0.8rem] block">
-              📱 MOBILE NUMBER *
+              📞 MOBILE NUMBER *
             </label>
-
             <input
+              id="cart-mobile"
               ref={mobileRef}
               value={mobile}
               onChange={(e) => setMobile(e.target.value)}
@@ -462,30 +382,26 @@ const CartModal = () => {
                 <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] mt-[0.8rem] block">
                   📍 COMPLETE DELIVERY ADDRESS *
                 </label>
-
                 <textarea
+                  id="cart-address"
                   ref={addressRef}
                   value={address}
-                  onChange={(e) =>
-                    setAddress(e.target.value)
-                  }
+                  onChange={(e) => setAddress(e.target.value)}
                   rows="3"
                   className="w-full min-h-[66px] resize-none bg-white/5 border border-[#E79227]/20 rounded-[10px] text-[#393939] font-inter text-[0.82rem] p-[0.65rem_0.9rem] outline-none transition-all placeholder:text-[#9f9e9e] focus:border-[#E79227]/55 focus:shadow-[0_0_0_3px_rgba(231,146,39,0.06)] dark:bg-black/5 dark:border-[#E79227]/30 dark:text-[#1a1a1a] dark:placeholder:text-[#bbb]"
-                  placeholder="House no., street, landmark, area, city…"
+                  placeholder="House no., street, landmark, area, city"
                 />
               </div>
             )}
 
             {/* COOKING INSTRUCTIONS */}
             <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] mt-[0.8rem] block">
-              👨‍🍳 COOKING INSTRUCTIONS
+              📝 COOKING INSTRUCTIONS
             </label>
-
             <textarea
+              id="cart-instructions"
               value={instructions}
-              onChange={(e) =>
-                setInstructions(e.target.value)
-              }
+              onChange={(e) => setInstructions(e.target.value)}
               rows="2"
               className="w-full resize-none bg-white/5 border border-[#E79227]/20 rounded-[10px] text-[#393939] font-inter text-[0.82rem] p-[0.65rem_0.9rem] outline-none transition-all placeholder:text-[#9f9e9e] focus:border-[#E79227]/55 focus:shadow-[0_0_0_3px_rgba(231,146,39,0.06)] dark:bg-black/5 dark:border-[#E79227]/30 dark:text-[#1a1a1a] dark:placeholder:text-[#bbb]"
               placeholder="Make it spicy, extra onions..."
@@ -493,14 +409,11 @@ const CartModal = () => {
 
             {/* EMAIL OPTION */}
             <div className="mt-[0.8rem] rounded-[10px] bg-[#f2fbf5] border border-[#dcefe2] p-[0.65rem_0.7rem] dark:bg-[#102218] dark:border-[#24452f]">
-
               <div className="flex items-start justify-between gap-[0.65rem]">
-
                 <div className="flex items-start gap-[0.55rem] min-w-0">
                   <div className="w-[28px] h-[28px] min-w-[28px] rounded-full bg-white border border-[#25b96f]/20 flex items-center justify-center text-[#12a85b] mt-[1px] dark:bg-[#183322]">
-                    <span className="text-[0.95rem] leading-none">✉</span>
+                    <span className="text-[0.95rem] leading-none">✉️</span>
                   </div>
-
                   <div className="min-w-0">
                     <div className="font-inter text-[0.76rem] font-semibold text-[#E79227] leading-[1.25]">
                       Want your order details on email?
@@ -515,7 +428,6 @@ const CartModal = () => {
                   type="button"
                   onClick={() => {
                     setWantEmail(!wantEmail);
-
                     if (wantEmail) {
                       setEmail('');
                     }
@@ -546,12 +458,10 @@ const CartModal = () => {
                       </svg>
                     )}
                   </span>
-
                   <span className="font-inter text-[0.64rem] font-semibold text-[#333] whitespace-nowrap dark:text-[#ddd]">
                     Yes, email me
                   </span>
                 </button>
-
               </div>
 
               {/* EMAIL INPUT */}
@@ -563,44 +473,36 @@ const CartModal = () => {
                 }`}
               >
                 <div className="overflow-hidden">
-
                   <label className="font-inter text-[0.62rem] font-bold tracking-[0.08em] text-[#159653] mb-[0.35rem] block">
-                    ✉ EMAIL ADDRESS
+                    📧 EMAIL ADDRESS
                   </label>
-
                   <input
+                    id="cart-email"
                     ref={emailRef}
                     value={email}
-                    onChange={(e) =>
-                      setEmail(e.target.value)
-                    }
+                    onChange={(e) => setEmail(e.target.value)}
                     type="email"
                     inputMode="email"
                     autoComplete="email"
                     className="w-full bg-white border border-[#bfe2cc] rounded-[8px] text-[#393939] font-inter text-[0.78rem] p-[0.62rem_0.75rem] outline-none transition-all placeholder:text-[#999] focus:border-[#12b866] focus:shadow-[0_0_0_3px_rgba(18,184,102,0.08)] dark:bg-[#142119] dark:border-[#376047] dark:text-[#f1f1f1] dark:placeholder:text-[#89958d]"
                     placeholder="Enter your email address..."
                   />
-
                 </div>
               </div>
-
             </div>
-<br />
+            <br />
+
             {/* TIP */}
             <div className="mt-[0.8rem]">
               <label className="font-inter text-[0.68rem] font-bold tracking-[0.08em] text-[#E79227] mb-[0.4rem] block">
-                ❤️ SHOW SOME LOVE TO THE CHEF
+                💖 SHOW SOME LOVE TO THE CHEF
               </label>
 
               <div className="flex gap-[0.5rem] mb-[0.8rem]">
                 {[20, 50, 100].map((t) => (
                   <button
                     key={t}
-                    onClick={() =>
-                      dispatch(
-                        setTip(tip === t ? 0 : t)
-                      )
-                    }
+                    onClick={() => dispatch(setTip(tip === t ? 0 : t))}
                     className={`flex-1 p-[0.6rem] rounded-lg border font-inter text-[0.8rem] font-semibold transition-colors ${
                       tip === t
                         ? 'bg-[#E79227]/10 border-[#E79227] text-[#E79227]'
@@ -618,7 +520,6 @@ const CartModal = () => {
               <div className="font-inter text-[0.78rem] text-[#555] dark:text-[#888]">
                 Reference Total
               </div>
-
               <div className="font-playfair text-[1.4rem] font-black bg-clip-text text-transparent bg-gradient-to-br from-[#E79227] to-[#E79227]">
                 ₹{grandTotal}
               </div>
@@ -626,7 +527,7 @@ const CartModal = () => {
 
             {/* NOTE */}
             <div className="font-inter text-[0.67rem] text-[#3a3a3a] leading-[1.55] mb-[0.9rem] p-[0.5rem_0.7rem] bg-[#E79227]/5 border-l-2 border-[#E79227]/30 rounded-r-md dark:text-[#999]">
-              ⚠️ Note: Final price will be confirmed by staff on WhatsApp. This is only an estimated reference.
+              ℹ️ Note: Final price will be confirmed by staff on WhatsApp. This is only an estimated reference.
             </div>
 
             {/* CHECKOUT */}
@@ -635,13 +536,11 @@ const CartModal = () => {
               disabled={items.length === 0}
               className="w-full p-[0.88rem] rounded-xl border-none bg-gradient-to-br from-[#25d366] to-[#128c7e] text-white font-inter text-[0.92rem] font-bold tracking-[0.03em] flex items-center justify-center gap-[0.5rem] shadow-[0_4px_18px_rgba(37,211,102,0.25)] transition-all duration-200 hover:opacity-90 hover:-translate-y-[1px] hover:shadow-[0_8px_28px_rgba(37,211,102,0.35)] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
             >
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="shrink-0">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
               </svg>
-
               Checkout via WhatsApp
             </button>
-
           </div>
         </div>
       </div>
