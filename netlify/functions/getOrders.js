@@ -1,4 +1,3 @@
-
 export const handler = async (event) => {
   if (event.httpMethod !== 'GET') {
     return {
@@ -48,7 +47,6 @@ export const handler = async (event) => {
 
       if (!response.ok) {
         const errText = await response.text();
-
         console.error('Airtable fetch failed:', response.status, errText);
 
         return {
@@ -67,6 +65,28 @@ export const handler = async (event) => {
 
     const orders = records.map((rec) => {
       const f = rec.fields || {};
+      const displayTimeStr = f['Time'] || '';
+
+      // 👉 DATE & TIMEZONE FIX
+      let correctDateStr = rec.createdTime;
+
+      // Agar 'Time' field me manually date di gayi hai (jaise "20/09/2026, 17:50")
+      if (displayTimeStr.includes('/')) {
+        const datePart = displayTimeStr.split(',')[0].trim();
+        const parts = datePart.split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          // PDF aur Frontend ko yahi date jayegi
+          correctDateStr = `${year}-${month}-${day}T12:00:00.000Z`; 
+        }
+      } else {
+        // Varna Airtable UTC time ko Indian Time (IST) me convert karein
+        const utcDate = new Date(rec.createdTime);
+        utcDate.setMinutes(utcDate.getMinutes() + 330);
+        correctDateStr = utcDate.toISOString();
+      }
 
       const rawItems = String(f['Order Items'] || '')
         .split('\n')
@@ -74,7 +94,8 @@ export const handler = async (event) => {
         .filter(Boolean);
 
       const parsedItems = rawItems.map((line) => {
-        const cleanLine = line.replace(/^[-🔸•*]\s*/, '');
+        // 👉 EMOJI & BACKSLASH FIX: Added \\ to remove \- garbage from PDF
+        const cleanLine = line.replace(/^[-🔸•*\\]+\s*/, ''); 
         const match = cleanLine.match(
           /^(.*?)(?:\s*\((.*?)\))?\s*x\s*(\d+)$/i
         );
@@ -95,7 +116,6 @@ export const handler = async (event) => {
       });
 
       const rawStatus = f['Order Status'] || 'Draft';
-
       let mappedStatus = 'Pending';
 
       if (rawStatus === 'Completed') {
@@ -107,8 +127,8 @@ export const handler = async (event) => {
       return {
         id: rec.id,
         orderNumber: `#KS-${rec.id.slice(-4).toUpperCase()}`,
-        createdAt: rec.createdTime,
-        displayTime: f['Time'] || '',
+        createdAt: correctDateStr, // 👉 Updated to send correct extracted date
+        displayTime: displayTimeStr,
         customerName: f['Customer Name'] || 'Guest',
         customerMobile: String(f['Customer Mobile'] || ''),
         customerEmail: f['Customer Email'] || '',
