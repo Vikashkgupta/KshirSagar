@@ -16,8 +16,11 @@ import SuccessModal from './components/modals/SuccessModal';
 import TimeWarningModal from './components/modals/TimeWarningModal';
 import CustomRequestModal from './components/modals/CustomRequestModal';
 
+
 // 1. Naya OfferManager import kar liya
 import OfferManager from './components/modals/OfferManager';
+
+import AIMitrModal from './components/modals/AIMitrModal';
 
 function App() {
   return (
@@ -51,6 +54,8 @@ function App() {
       
       {/* 2. Offer Popup ko Modals ke sath add kar diya */}
       <OfferManager />
+
+      <AIMitrModal />
       
     </div>
   );
