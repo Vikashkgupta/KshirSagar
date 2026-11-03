@@ -32,26 +32,45 @@ const LOCAL_MENU_ITEMS = [
 const getInstantLocalReply = (query) => {
   const q = String(query || '').toLowerCase();
 
-  if (q.includes('दुकान') || q.includes('पता') || q.includes('समय') || q.includes('time') || q.includes('address') || q.includes('number') || q.includes('नंबर')) {
+  // Strictly ONLY opening/closing time
+  if (q.includes('kitne bje') || q.includes('kab khul') || q.includes('kab band') || q.includes('time') || q.includes('timing') || q.includes('समय')) {
     return {
-      reply:
-        '🏪 **क्षीर सागर स्वीट्स एंड बेकर्स (Since 1998)**\n' +
-        '📍 **पता:** नई बाज़ार, मैरवा (सिवान)\n' +
-        '⏰ **समय:** सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन)\n' +
-        '📞 **मोबाइल / WhatsApp:** +91 8226935738\n' +
-        '🚚 **होम डिलीवरी:** मैरवा और आस-पास के इलाकों में तेज़ डिलीवरी उपलब्ध है।',
-      recommendedItems: LOCAL_MENU_ITEMS.slice(0, 2)
+      reply: '⏰ हमारी दुकान रोज़ **सुबह 8:00 बजे खुलती है** और **रात 10:00 बजे बंद होती है** (सातों दिन खुली रहती है)।',
+      recommendedItems: []
+    };
+  }
+
+  // Strictly ONLY address
+  if (q.includes('पता') || q.includes('kahan') || q.includes('address') || q.includes('location')) {
+    return {
+      reply: '📍 हमारा पता है: **नई बाज़ार, मैरवा (सिवान), पावर हाउस के पास**।',
+      recommendedItems: []
+    };
+  }
+
+  // Strictly ONLY phone number
+  if (q.includes('number') || q.includes('phone') || q.includes('mobile') || q.includes('नंबर')) {
+    return {
+      reply: '📞 हमारा मोबाइल और WhatsApp नंबर है: **+91 8226935738**',
+      recommendedItems: []
+    };
+  }
+
+  // Weather query on local fallback
+  if (q.includes('mausam') || q.includes('weather') || q.includes('मौसम')) {
+    return {
+      reply: '🌤️ अभी मैरवा में मौसम काफ़ी सुहावना है! ऐसे मौसम में गरमा-गरम समोसे या रसमलाई का स्वाद ज़रूर लें।',
+      recommendedItems: []
     };
   }
 
   if (q.includes('ऑफ़र') || q.includes('offer') || q.includes('discount') || q.includes('कूपन')) {
     return {
       reply:
-        '🎉 **आज के लाइव फेस्टिवल ऑफ़र्स:**\n' +
+        '🏷️ **आज के लाइव ऑफ़र्स:**\n' +
         '• `KSHIR10` — ₹500 से ऊपर के ऑर्डर पर **10% की छूट**\n' +
-        '• `PARTY50` — पिज़्ज़ा + स्नैक्स कॉम्बो पर **Flat ₹50 OFF**\n\n' +
-        'नीचे दिए गए आइटम्स पर **+ Add** दबाकर कार्ट में जोड़ें:',
-      recommendedItems: LOCAL_MENU_ITEMS.slice(0, 3)
+        '• `PARTY50` — पिज़्ज़ा + स्नैक्स कॉम्बो पर **Flat ₹50 OFF**',
+      recommendedItems: []
     };
   }
 
@@ -62,25 +81,20 @@ const getInstantLocalReply = (query) => {
         '• **Paneer Pizza (Full)** — ₹199\n' +
         '• **Veg Chowmein (Full)** — ₹110\n' +
         '• **Rasmalai (1 pc)** — ₹45\n' +
-        '• **Crispy Samosa (2 pcs)** — ₹20\n\n' +
-        'इन्हें कार्ट में जोड़ने के लिए नीचे **+ Add** बटन दबाएँ:',
+        '• **Crispy Samosa (2 pcs)** — ₹20',
       recommendedItems: [LOCAL_MENU_ITEMS[4], LOCAL_MENU_ITEMS[5], LOCAL_MENU_ITEMS[1], LOCAL_MENU_ITEMS[6]]
     };
   }
 
   if (q.includes('केक') || q.includes('cake') || q.includes('बेकरी')) {
     return {
-      reply:
-        '🎂 **कस्टम केक और बेकरी स्पेशल:**\n' +
-        'हमारे पास बर्थडे और एनिवर्सरी के लिए ताज़ा **Truffle Cake**, **Red Velvet** और कस्टम डिज़ाइन केक उपलब्ध हैं:',
-      recommendedItems: [LOCAL_MENU_ITEMS[3], LOCAL_MENU_ITEMS[0], LOCAL_MENU_ITEMS[4]]
+      reply: '🎂 हमारे पास बर्थडे और एनिवर्सरी के लिए ताज़ा **Truffle Cake** और कस्टम डिज़ाइन केक उपलब्ध हैं:',
+      recommendedItems: [LOCAL_MENU_ITEMS[3]]
     };
   }
 
   return {
-    reply:
-      '🍬 **आज की हमारी सबसे लोकप्रिय मिठाइयाँ और स्पेशल आइटम्स:**\n' +
-      'शुद्ध देसी घी से बनी ताज़ा मिठाइयाँ और गरमा-गरम स्नैक्स। पसंद आने पर **+ Add** दबाएँ:',
+    reply: '🍬 **आज की हमारी सबसे लोकप्रिय मिठाइयाँ और स्पेशल आइटम्स:**',
     recommendedItems: [LOCAL_MENU_ITEMS[0], LOCAL_MENU_ITEMS[1], LOCAL_MENU_ITEMS[2], LOCAL_MENU_ITEMS[4]]
   };
 };
@@ -160,7 +174,8 @@ const AIMitrModal = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: trimmed,
-          history: historyPayload
+          history: historyPayload,
+          clientGeminiKey: import.meta.env?.VITE_GEMINI_API_KEY || ''
         })
       });
 
