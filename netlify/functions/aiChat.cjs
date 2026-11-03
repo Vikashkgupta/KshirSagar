@@ -1,18 +1,30 @@
 // File: netlify/functions/aiChat.cjs
-// KshirSagar AI Mitr — Serverless RAG + Gemini Assistant
-// Reads Live Airtable "Menu" & "Offers" Tables + Store Profile + Smart Local Fallback
+// KshirSagar AI Mitr — Hybrid General-Purpose AI (like ChatGPT) + Live Website & Airtable RAG Assistant
+// Capabilities:
+// 1. Answers ANY general-knowledge, math, coding, science, writing, or world question just like ChatGPT.
+// 2. Simultaneously has full access to KshirSagar's Live Airtable Menu, Live Airtable Offers, and Frontend Website Content.
+// 3. Only shows Dish Cards (+ Add button) when the conversation is actually about KshirSagar food/menu/combos.
 
 const STORE_PROFILE = {
-  name: "KshirSagar Sweets & Bakers",
-  tagline: "Hamesha Kuch Naya",
-  timings: "8:00 AM to 10:00 PM (Open all 7 days)",
-  address: "Mairwa Dham, Near Power House (with local delivery across Mairwa & Civil Lines)",
+  name: "KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)",
+  established: "Since 1998 — Tradition of Excellence",
+  tagline: "हमेशा कुछ नया (Hamesha Kuch Naya)",
+  timings: "सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)",
+  address: "Nai Bazar, Mairwa (Siwan), Bihar — Near Power House, Mairwa Dham",
   phone: "+91 8226935738",
-  whatsapp: "918226935738",
+  whatsapp: "+91 8226935738",
   email: "vikashmw900@gmail.com",
   website: "https://kshirsagarsweets.netlify.app/",
-  specialties: "Pure Desi Ghee Traditional Sweets (Kaju Katli, Rasmalai, Ghewar, Besan Laddu, Soan Papdi), Crispy Namkeen, Hot Evening Snacks (Samosa, Veg Chowmein, Manchurian, Masala Dosa), and Oven-Fresh Pizzas & Cakes.",
-  deliveryInfo: "Fast home delivery available! Customers can add items to their cart, fill in their Name, Mobile Number, Delivery Address, and Optional Email for instant digital receipt, and confirm via WhatsApp."
+  androidApp: "https://kshirsagarsweets.netlify.app/KshirSagar.apk",
+  developer: "Developed by Vikash Kumar Gupta (Instagram: @_vikashkgupta)",
+  highlights: [
+    "100% Pure Ingredients (शुद्ध देसी घी और ताज़ा सामग्री)",
+    "Hygienic Preparation (पूरी तरह साफ़-सुथरी और हाइजीनिक किचन)",
+    "Custom Cake Orders (बर्थडे, एनिवर्सरी और पार्टी के लिए कस्टम केक ऑर्डर की सुविधा)",
+    "Zero Commission Direct Ordering (बिना किसी एक्स्ट्रा ऐप कमीशन के सीधा दुकान के रेट पर होम डिलीवरी)"
+  ],
+  orderingProcess:
+    "कस्टमर वेबसाइट या Android App पर Menu देख सकते हैं, आइटम को Cart में जोड़ सकते हैं, Custom Cake या Dish Request भेज सकते हैं, और Checkout फॉर्म में अपना नाम, मोबाइल नंबर, पता और Optional Email (इंस्टेंट ईमेल रिसीट के लिए) भरकर ऑर्डर कर सकते हैं। ऑर्डर तुरंत WhatsApp और दुकानदार के पास पहुँच जाता है।"
 };
 
 const FALLBACK_MENU = [
@@ -68,11 +80,12 @@ async function fetchLiveAirtableData(baseId, apiKey) {
             name: rec.fields.Name || rec.fields.ItemName || "Special Item",
             category: rec.fields.Category || "Sweets",
             price: Number(rec.fields.Price || 0),
-            unit: rec.fields.Unit || rec.fields.Weight || "",
+            unit: rec.fields.Unit || rec.fields.Weight || rec.fields.Variant || "",
             description: rec.fields.Description || "",
             image:
               (Array.isArray(rec.fields.Image) && rec.fields.Image[0]?.url) ||
               rec.fields.Image ||
+              rec.fields.ImageUrl ||
               "/sweet.jpg",
             available: rec.fields.Available !== false
           }))
@@ -101,136 +114,117 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-function buildSmartLocalResponse(userMessage, menu, offers) {
-  const q = (userMessage || "").toLowerCase();
+function buildSmartLocalFallback(userMessage, menu, offers) {
+  const q = (userMessage || "").trim();
+  const lower = q.toLowerCase();
 
-  // 1. Store Timing / Address / Contact / About queries
-  if (
-    q.includes("time") ||
-    q.includes("timing") ||
-    q.includes("kab khul") ||
-    q.includes("open") ||
-    q.includes("close") ||
-    q.includes("address") ||
-    q.includes("kahan") ||
-    q.includes("location") ||
-    q.includes("number") ||
-    q.includes("phone") ||
-    q.includes("mobile") ||
-    q.includes("contact") ||
-    q.includes("dukan") ||
-    q.includes("shop") ||
-    q.includes("delivery")
-  ) {
+  // 1. Percentage math calculation (e.g., "15% of 840")
+  const mathPercent = lower.match(/(\d+(?:\.\d+)?)\s*%\s*(?:of|ka|की|का)\s*(\d+(?:\.\d+)?)/);
+  if (mathPercent) {
+    const pct = Number(mathPercent[1]);
+    const total = Number(mathPercent[2]);
+    const ans = (pct / 100) * total;
     return {
-      reply:
-        `🏪 **${STORE_PROFILE.name}** (${STORE_PROFILE.tagline}) की जानकारी:\n\n` +
-        `⏰ **खुलने का समय:** ${STORE_PROFILE.timings}\n` +
-        `📍 **पता (Address):** ${STORE_PROFILE.address}\n` +
-        `📞 **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}\n` +
-        `🚚 **होम डिलीवरी:** ${STORE_PROFILE.deliveryInfo}\n\n` +
-        `नीचे हमारे कुछ सबसे लोकप्रिय आइटम्स दिए गए हैं, आप सीधे **+ Add to Cart** दबाकर ऑर्डर शुरू कर सकते हैं!`,
-      recommendedItems: menu.slice(0, 3),
-      suggestedCategory: "All",
-      activeOffers: offers,
+      reply: `🧮 **गणना (Calculation):**\n${total} का ${pct}% = **${ans}** होता है।`,
+      recommendedItems: [],
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🏷️ आज के ऑफ़र्स क्या हैं?"]
     };
   }
 
-  // 2. Offers & Discount queries
-  if (q.includes("offer") || q.includes("discount") || q.includes("coupon") || q.includes("promo") || q.includes("chhut") || q.includes("deal")) {
+  // 2. Arithmetic expressions (e.g., "25 * 45", "1200 / 8")
+  const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
+  if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
+    try {
+      const result = Function(`"use strict"; return (${cleanMath})`)();
+      if (typeof result === "number" && isFinite(result)) {
+        return {
+          reply: `🧮 **उत्तर (Math Result):**\n\`${cleanMath} = ${result}\``,
+          recommendedItems: [],
+          quickFollowUps: ["🍬 KshirSagar मेन्यू दिखाओ", "🍕 ₹500 का कॉम्बो बनाओ", "📍 दुकान का समय और पता"]
+        };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // 3. Store info / address / contact / website details
+  if (
+    lower.includes("time") ||
+    lower.includes("kab khul") ||
+    lower.includes("address") ||
+    lower.includes("kahan") ||
+    lower.includes("number") ||
+    lower.includes("phone") ||
+    lower.includes("contact") ||
+    lower.includes("dukan") ||
+    lower.includes("shop") ||
+    lower.includes("kshirsagar") ||
+    lower.includes("क्षीर")
+  ) {
+    return {
+      reply:
+        `🏪 **${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
+        `• **टैगलाइन:** ${STORE_PROFILE.tagline}\n` +
+        `• **खुलने का समय:** ${STORE_PROFILE.timings}\n` +
+        `• **पता:** ${STORE_PROFILE.address}\n` +
+        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}\n` +
+        `• **खासियत:** ${STORE_PROFILE.highlights.join(", ")}`,
+      recommendedItems: menu.slice(0, 3),
+      quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
+    };
+  }
+
+  // 4. Offers & Promo Codes
+  if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("chhut")) {
     const offerLines = offers
       .map((o) => `🎁 **${o.title}** — कोड: \`${o.code}\` (${o.discount})`)
       .join("\n");
     return {
-      reply:
-        `🎉 **KshirSagar के लाइव ऑफ़र्स और कूपन कोड्स:**\n\n${offerLines}\n\n` +
-        `आप नीचे दिए गए बेस्टसेलर आइटम्स को कार्ट में जोड़कर चेकआउट के समय ये कूपन लगा सकते हैं:`,
-      recommendedItems: menu.slice(0, 4),
-      suggestedCategory: "All",
-      activeOffers: offers,
+      reply: `🎉 **KshirSagar के लाइव ऑफ़र्स (Airtable से):**\n\n${offerLines}`,
+      recommendedItems: menu.slice(0, 3),
       quickFollowUps: ["🍬 बेस्ट मिठाइयाँ दिखाओ", "🍕 पिज़्ज़ा और स्नैक्स दिखाओ", "📍 दुकान का पता और नंबर"]
     };
   }
 
-  // 3. Budget / Party / Combo planning queries
-  const budgetMatch = q.match(/(\d{3,4})/);
-  if (budgetMatch || q.includes("budget") || q.includes("combo") || q.includes("party") || q.includes("birthday") || q.includes("puja")) {
-    const budget = budgetMatch ? Number(budgetMatch[1]) : 500;
-    const sorted = [...menu].sort((a, b) => a.price - b.price);
-    const picked = [];
-    let runningTotal = 0;
-
-    for (const item of sorted) {
-      if (runningTotal + item.price <= budget && picked.length < 4) {
-        picked.push(item);
-        runningTotal += item.price;
-      }
-    }
-    const finalItems = picked.length > 0 ? picked : menu.slice(0, 3);
-    const sum = finalItems.reduce((acc, i) => acc + i.price, 0);
-
+  // 5. Menu / Price / Food queries
+  if (
+    lower.includes("menu") ||
+    lower.includes("price") ||
+    lower.includes("rate") ||
+    lower.includes("sweet") ||
+    lower.includes("mithai") ||
+    lower.includes("pizza") ||
+    lower.includes("snack") ||
+    lower.includes("cake") ||
+    lower.includes("namkeen") ||
+    lower.includes("combo") ||
+    lower.includes("मिठाई")
+  ) {
     return {
       reply:
-        `✨ आपके **₹${budget}** के बजट के हिसाब से मैंने **KshirSagar स्पेशल कॉम्बो** तैयार किया है (कुल अनुमानित बिल: **₹${sum}**):\n\n` +
-        finalItems.map((i) => `• **${i.name}** — ₹${i.price}`).join("\n") +
-        `\n\nआप नीचे दिए गए कार्ड्स पर **+ Add to Cart** बटन दबाकर इन्हें अपनी पसंद से कार्ट में जोड़ सकते हैं!`,
-      recommendedItems: finalItems,
-      suggestedCategory: "All",
-      activeOffers: offers,
-      quickFollowUps: ["🍬 सिर्फ़ मिठाइयाँ दिखाओ", "🍕 पिज़्ज़ा और स्नैक्स कॉम्बो", "🏷️ कोई डिस्काउंट कूपन है?"]
+        `🍽️ **KshirSagar लाइव मेन्यू और रेट्स:**\n` +
+        menu
+          .slice(0, 8)
+          .map((m) => `• **${m.name}** (${m.category}) — ₹${m.price}`)
+          .join("\n") +
+        `\n\nनीचे दिए गए कार्ड्स पर **+ Add** दबाकर आप इन्हें सीधे कार्ट में जोड़ सकते हैं:`,
+      recommendedItems: menu.slice(0, 4),
+      quickFollowUps: ["🍕 ₹500 में पार्टी कॉम्बो बताओ", "🏷️ आज के डिस्काउंट ऑफ़र्स", "📍 दुकान कब खुलती है?"]
     };
   }
 
-  // 4. Category specific queries (Pizza, Snacks, Namkeen, Sweets)
-  if (q.includes("pizza") || q.includes("burger")) {
-    const items = menu.filter((m) => m.category.toLowerCase().includes("pizza") || m.name.toLowerCase().includes("pizza") || m.name.toLowerCase().includes("burger"));
-    return {
-      reply: `🍕 **KshirSagar के ओवन-फ्रेश पिज़्ज़ा और बर्गर:**\nयहाँ हमारे सबसे ज़्यादा पसंद किए जाने वाले आइटम्स और उनके लाइव प्राइस हैं। जिसे कार्ट में डालना हो, उसके **+ Add to Cart** बटन पर क्लिक करें:`,
-      recommendedItems: (items.length ? items : menu).slice(0, 4),
-      suggestedCategory: "Pizza",
-      activeOffers: offers,
-      quickFollowUps: ["🍜 शाम के गरमा-गरम स्नैक्स", "🍬 मीठे में क्या है?", "🏷️ आज का ऑफ़र बताओ"]
-    };
-  }
-
-  if (q.includes("snack") || q.includes("samosa") || q.includes("chowmein") || q.includes("dosa") || q.includes("chatpata") || q.includes("teekha")) {
-    const items = menu.filter((m) => m.category.toLowerCase().includes("snack") || m.category.toLowerCase().includes("namkeen"));
-    return {
-      reply: `🥟 **गरमा-गरम स्नैक्स और चटपटे आइटम्स:**\nशाम की चाय या छोटी भूख के लिए हमारे लाइव मेन्यू से ये रहे सबसे बेहतरीन विकल्प:`,
-      recommendedItems: (items.length ? items : menu).slice(0, 4),
-      suggestedCategory: "Snacks",
-      activeOffers: offers,
-      quickFollowUps: ["🍕 पिज़्ज़ा दिखाओ", "🥜 क्रिस्पी नमकीन दिखाओ", "🍬 देसी घी की मिठाइयाँ"]
-    };
-  }
-
-  if (q.includes("namkeen") || q.includes("bhujia") || q.includes("mixture")) {
-    const items = menu.filter((m) => m.category.toLowerCase().includes("namkeen"));
-    return {
-      reply: `🥜 **KshirSagar की ताज़ा और कुरकुरी नमकीन:**\nचाय के साथ या सफ़र के लिए हमारी बेस्ट नमकीन और उनके लाइव रेट्स:`,
-      recommendedItems: (items.length ? items : menu).slice(0, 4),
-      suggestedCategory: "Namkeen",
-      activeOffers: offers,
-      quickFollowUps: ["🍬 स्पेशल मिठाइयाँ दिखाओ", "🥟 गरमा-गरम स्नैक्स", "📍 दुकान का समय और पता"]
-    };
-  }
-
-  // Default: Sweets & Full Menu Showcase
-  const sweetItems = menu.filter((m) => m.category.toLowerCase().includes("sweet"));
   return {
     reply:
-      `🙏 **नमस्ते! KshirSagar AI Mitr में आपका स्वागत है!**\n\n` +
-      `मैं आपके लिए लाइव मेन्यू रेट्स चेक कर सकता हूँ, पार्टी/त्योहार के बजट कॉम्बो बना सकता हूँ, और दुकान की पूरी जानकारी दे सकता हूँ।\n\n` +
-      `यहाँ आज की हमारी सबसे लोकप्रिय मिठाइयाँ और डिशेज़ हैं—पसंद आने पर **+ Add to Cart** दबाएँ:`,
-    recommendedItems: (sweetItems.length ? sweetItems : menu).slice(0, 4),
-    suggestedCategory: "Sweets",
-    activeOffers: offers,
+      "🙏 **नमस्ते! मैं KshirSagar AI Mitr हूँ।**\n\n" +
+      "आप मुझसे **दुकान का लाइव मेन्यू, ऑफ़र्स, बजट कॉम्बो** के साथ-साथ **गणित (Math), कोडिंग, सामान्य ज्ञान (GK) या दुनिया का कोई भी सवाल** (बिल्कुल ChatGPT की तरह) पूछ सकते हैं!\n\n" +
+      "*(नोट: बाहरी दुनिया के सभी सवालों के जवाब के लिए Netlify Environment Variables में GEMINI_API_KEY ज़रूर सेट करें।)*",
+    recommendedItems: menu.slice(0, 3),
     quickFollowUps: [
-      "🍕 ₹500 में पार्टी कॉम्बो बताओ",
-      "🏷️ आज के डिस्काउंट ऑफ़र्स क्या हैं?",
-      "📍 दुकान कब खुलती है और कहाँ है?",
-      "🥟 शाम के स्नैक्स दिखाओ"
+      "🍬 आज की स्पेशल मिठाई और रेट बताओ",
+      "🧮 15% of 840 कितना होता है?",
+      "🏷️ आज के लाइव ऑफ़र्स क्या हैं?",
+      "🌍 AI क्या होता है, आसान भाषा में समझाओ"
     ]
   };
 }
@@ -254,50 +248,58 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || "{}");
     const userMessage = (body.message || "").trim();
-    const chatHistory = Array.isArray(body.history) ? body.history.slice(-6) : [];
+    const chatHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
     const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
+    const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
+    const pageContext = String(body.pageContext || "").slice(0, 3500);
 
-    // 1. Fetch Live Menu & Offers from Airtable (or use clientMenu if already loaded on frontend)
+    // 1. Fetch Live Menu & Offers from Airtable (plus merge with any frontend menu/offers passed in)
     const liveData = await fetchLiveAirtableData(
       process.env.AIRTABLE_BASE_ID,
       process.env.AIRTABLE_API_KEY
     );
 
     const activeMenu = clientMenu || liveData.menu;
-    const activeOffers = liveData.offers;
+    const activeOffers = clientOffers || liveData.offers;
 
     const geminiKey = process.env.GEMINI_API_KEY;
 
-    // If GEMINI_API_KEY is not configured yet, return instant Smart Local Engine response
+    // Fallback if GEMINI_API_KEY is not set
     if (!geminiKey) {
-      const fallbackResult = buildSmartLocalResponse(userMessage, activeMenu, activeOffers);
+      const fallbackResult = buildSmartLocalFallback(userMessage, activeMenu, activeOffers);
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           success: true,
-          mode: "smart_local_engine",
+          mode: "smart_local_fallback",
           dataSource: liveData.source,
-          storeProfile: STORE_PROFILE,
           ...fallbackResult
         })
       };
     }
 
-    // 2. Prepare Grounded System Prompt with Live Airtable Menu, Offers & Store Profile
+    // 2. Hybrid System Prompt: Full ChatGPT General Intelligence + Full KshirSagar Website & Airtable Knowledge
     const systemInstruction = `
-You are "KshirSagar AI Mitr", the official intelligent concierge and food assistant for KshirSagar Sweets & Bakers.
-Always respond warmly, concisely, and helpfully in the same language/style the user uses (Hindi, Hinglish, or English).
+You are "KshirSagar AI Mitr", a powerful dual-mode AI assistant built into the KshirSagar Sweets & Bakers website (https://kshirsagarsweets.netlify.app/).
 
-=== OFFICIAL STORE PROFILE ===
-- Store Name: ${STORE_PROFILE.name} ("${STORE_PROFILE.tagline}")
-- Opening & Closing Time: ${STORE_PROFILE.timings}
-- Address / Location: ${STORE_PROFILE.address}
-- Contact / Mobile / WhatsApp Number: ${STORE_PROFILE.phone}
-- Official Website: ${STORE_PROFILE.website}
-- Delivery Policy: ${STORE_PROFILE.deliveryInfo}
+YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
 
-=== LIVE AIRTABLE MENU ITEMS (JSON) ===
+CAPABILITY 1 — UNIVERSAL GENERAL AI ASSISTANT (LIKE CHATGPT):
+- The user can ask you ANYTHING in the world: math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
+- Whenever the user asks a general question (not about the shop), answer it thoroughly, accurately, and naturally just like ChatGPT! Never refuse a general question by saying "I am only a sweet shop bot".
+- For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in your JSON output so dish cards are NOT shown unnecessarily.
+
+CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE AIRTABLE MENU & OFFERS EXPERT:
+- Whenever the user asks about the shop, website content, sweets, menu items, prices, party combos, custom cakes, timings, address, contact details, or active offers, use the exact real-time data provided below:
+
+=== 1. OFFICIAL WEBSITE & STORE DETAILS ===
+${JSON.stringify(STORE_PROFILE, null, 2)}
+
+=== 2. LIVE FRONTEND PAGE CONTENT (EXTRACTED FROM USER'S SCREEN) ===
+${pageContext || "Standard KshirSagar storefront loaded."}
+
+=== 3. LIVE AIRTABLE MENU TABLE (REAL-TIME ITEMS & PRICES IN ₹) ===
 ${JSON.stringify(
   activeMenu.map((m) => ({
     id: m.id,
@@ -305,23 +307,23 @@ ${JSON.stringify(
     category: m.category,
     price: m.price,
     unit: m.unit || "",
-    image: m.image || "/sweet.jpg"
+    description: m.description || ""
   }))
 )}
 
-=== LIVE AIRTABLE OFFERS & PROMO CODES ===
+=== 4. LIVE AIRTABLE OFFERS TABLE (ACTIVE PROMO CODES & DEALS) ===
 ${JSON.stringify(activeOffers)}
 
-=== YOUR RULES ===
-1. You ONLY suggest and inform—never claim you have already placed an order or automatically modified the cart without the user clicking the "+ Add to Cart" button on the item cards below your message.
-2. When the user asks about shop timings, address, mobile number, delivery, or about KshirSagar, give accurate details from OFFICIAL STORE PROFILE.
-3. When the user asks for menu items, prices, party combos, or budget suggestions (e.g. "₹500 mein party combo"), calculate exact prices using LIVE AIRTABLE MENU ITEMS and list the item names and prices clearly.
-4. Always return STRICT JSON matching this exact structure (no markdown code fences around the JSON):
+=== OUTPUT FORMAT RULES ===
+- Match the user's language naturally (Hindi, Hinglish, or English).
+- If the user asks to add to cart, remind them they can tap the "+ Add" button on the suggested dish cards below your message.
+- Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general ChatGPT questions (like math, GK, coding, etc.), set "showFoodCards": false and "recommendedItemNames": [].
+- Return STRICT JSON matching this exact schema:
 {
-  "reply": "Your friendly formatted response with emojis and bullet points",
-  "recommendedItemNames": ["Exact Item Name 1", "Exact Item Name 2"],
-  "suggestedCategory": "Sweets" | "Namkeen" | "Snacks" | "Pizza" | "All",
-  "quickFollowUps": ["Short follow-up question 1", "Short follow-up question 2", "Short follow-up question 3"]
+  "reply": "Your complete, helpful markdown response (can include bullet points, bold text, code/math steps, or menu details)",
+  "showFoodCards": true or false,
+  "recommendedItemNames": ["Exact Menu Item Name 1", "Exact Menu Item Name 2"],
+  "quickFollowUps": ["Relevant follow-up 1", "Relevant follow-up 2", "Relevant follow-up 3"]
 }
 `;
 
@@ -334,7 +336,7 @@ ${JSON.stringify(activeOffers)}
       })),
       {
         role: "user",
-        parts: [{ text: userMessage || "Namaste! Dukan aur menu ke baare mein batao." }]
+        parts: [{ text: userMessage || "Namaste!" }]
       }
     ];
 
@@ -345,14 +347,14 @@ ${JSON.stringify(activeOffers)}
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents,
         generationConfig: {
-          temperature: 0.4,
+          temperature: 0.5,
           responseMimeType: "application/json"
         }
       })
     });
 
     if (!geminiRes.ok) {
-      const fallbackResult = buildSmartLocalResponse(userMessage, activeMenu, activeOffers);
+      const fallbackResult = buildSmartLocalFallback(userMessage, activeMenu, activeOffers);
       return {
         statusCode: 200,
         headers,
@@ -360,7 +362,6 @@ ${JSON.stringify(activeOffers)}
           success: true,
           mode: "smart_fallback",
           dataSource: liveData.source,
-          storeProfile: STORE_PROFILE,
           ...fallbackResult
         })
       };
@@ -372,21 +373,28 @@ ${JSON.stringify(activeOffers)}
     try {
       parsed = JSON.parse(rawText);
     } catch {
-      parsed = { reply: rawText, recommendedItemNames: [], suggestedCategory: "All", quickFollowUps: [] };
+      parsed = {
+        reply: rawText,
+        showFoodCards: false,
+        recommendedItemNames: [],
+        quickFollowUps: []
+      };
     }
 
-    // Match recommended item names back to full Airtable Menu objects (with images, prices, IDs)
-    const names = Array.isArray(parsed.recommendedItemNames) ? parsed.recommendedItemNames : [];
-    let matchedItems = activeMenu.filter((item) =>
-      names.some(
-        (n) =>
-          item.name.toLowerCase().includes(String(n).toLowerCase()) ||
-          String(n).toLowerCase().includes(item.name.toLowerCase())
-      )
-    );
-
-    if (matchedItems.length === 0) {
-      matchedItems = activeMenu.slice(0, 3);
+    // Only attach recommendedItems if showFoodCards is true
+    let matchedItems = [];
+    if (parsed.showFoodCards) {
+      const names = Array.isArray(parsed.recommendedItemNames) ? parsed.recommendedItemNames : [];
+      matchedItems = activeMenu.filter((item) =>
+        names.some(
+          (n) =>
+            item.name.toLowerCase().includes(String(n).toLowerCase()) ||
+            String(n).toLowerCase().includes(item.name.toLowerCase())
+        )
+      );
+      if (matchedItems.length === 0 && names.length > 0) {
+        matchedItems = activeMenu.slice(0, 3);
+      }
     }
 
     return {
@@ -394,29 +402,25 @@ ${JSON.stringify(activeOffers)}
       headers,
       body: JSON.stringify({
         success: true,
-        mode: "gemini_live_rag",
+        mode: "gemini_universal_plus_rag",
         dataSource: liveData.source,
-        storeProfile: STORE_PROFILE,
-        reply: parsed.reply || "यहाँ आपके लिए हमारे लाइव मेन्यू से कुछ बेहतरीन सुझाव हैं:",
+        reply: parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?",
         recommendedItems: matchedItems.slice(0, 4),
-        suggestedCategory: parsed.suggestedCategory || "All",
-        activeOffers,
         quickFollowUps:
           Array.isArray(parsed.quickFollowUps) && parsed.quickFollowUps.length > 0
             ? parsed.quickFollowUps.slice(0, 4)
-            : ["🍬 बेस्ट मिठाइयाँ दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "📍 दुकान का टाइम और पता"]
+            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🧮 कोई मैथ या GK का सवाल पूछो"]
       })
     };
   } catch (err) {
     console.error("aiChat error:", err);
-    const fallbackResult = buildSmartLocalResponse("", FALLBACK_MENU, FALLBACK_OFFERS);
+    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS);
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
         mode: "error_recovery",
-        storeProfile: STORE_PROFILE,
         ...fallbackResult
       })
     };
