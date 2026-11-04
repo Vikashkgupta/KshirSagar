@@ -1,6 +1,6 @@
 // File: netlify/functions/aiChat.cjs
 // KshirSagar AI Mitr — Universal ChatGPT-Style Assistant + Live KshirSagar Website & Airtable RAG
-// Supports BOTH new Google AI Studio Auth Keys (starting with "AQ.") AND legacy "AIza" keys via x-goog-api-key header
+// Auto-discovers available Gemini models via ListModels so it never fails on model-name mismatches
 
 const STORE_PROFILE = {
   name: "KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)",
@@ -108,20 +108,55 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// Multi-Model & Multi-Endpoint Caller supporting both "AQ." Auth Keys and "AIza" Keys
-async function callGeminiWithFallbackModels(apiKey, systemInstruction, contents) {
+// Automatically discovers the active Flash models on your Google AI Studio account and calls generativelanguage.googleapis.com
+async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
-  const candidateModels = [
+  const errors = [];
+
+  // 1. Default priority list of current & legacy Flash models
+  let modelsToTry = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.8-flash",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-flash-latest"
   ];
 
-  let lastErrorText = "";
+  // 2. Dynamically fetch exact available models for this key from v1beta/models
+  try {
+    const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": cleanKey }
+    });
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      const available = (listData.models || [])
+        .filter(
+          (m) =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes("generateContent") &&
+            m.name.includes("gemini")
+        )
+        .map((m) => m.name.replace("models/", ""));
 
-  for (const modelName of candidateModels) {
-    // Pass key in BOTH x-goog-api-key header AND ?key= query param for maximum compatibility
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+      // Prioritize flash-lite and flash models (which have the highest free-tier quota)
+      const flashModels = available.filter((n) => n.includes("flash"));
+      if (flashModels.length > 0) {
+        modelsToTry = [...new Set([...flashModels, ...modelsToTry])];
+      } else if (available.length > 0) {
+        modelsToTry = [...new Set([...available, ...modelsToTry])];
+      }
+    } else {
+      const listErr = await listRes.text();
+      errors.push(`ListModels(${listRes.status}): ${listErr.slice(0, 140)}`);
+    }
+  } catch (e) {
+    errors.push(`ListModelsErr: ${e.message}`);
+  }
+
+  // 3. Try generating content using ONLY x-goog-api-key header (never duplicate ?key= + header)
+  for (const modelName of modelsToTry.slice(0, 5)) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
 
     try {
       const res = await fetch(endpoint, {
@@ -144,52 +179,21 @@ async function callGeminiWithFallbackModels(apiKey, systemInstruction, contents)
         const data = await res.json();
         return { ok: true, data, modelUsed: modelName };
       } else {
-        lastErrorText = await res.text();
+        const errBody = await res.text();
+        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 120)}`);
       }
     } catch (err) {
-      lastErrorText = err.message;
+      errors.push(`${modelName}: ${err.message}`);
     }
   }
 
-  // If AQ. key is bound to Vertex/Agent Platform endpoint, try aiplatform.googleapis.com
-  if (cleanKey.startsWith("AQ.")) {
-    try {
-      const vertexEndpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`;
-      const vRes = await fetch(vertexEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": cleanKey
-        },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: {
-            temperature: 0.5,
-            responseMimeType: "application/json"
-          }
-        })
-      });
-
-      if (vRes.ok) {
-        const vData = await vRes.json();
-        return { ok: true, data: vData, modelUsed: "vertex-gemini-2.5-flash" };
-      } else {
-        lastErrorText = await vRes.text();
-      }
-    } catch (err) {
-      lastErrorText = err.message;
-    }
-  }
-
-  return { ok: false, errorText: lastErrorText };
+  return { ok: false, errorText: errors.join(" | ") };
 }
 
 function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
-  // 1. Percentage math calculation (e.g., "15% of 840")
   const mathPercent = lower.match(/(\d+(?:\.\d+)?)\s*%\s*(?:of|ka|की|का)\s*(\d+(?:\.\d+)?)/);
   if (mathPercent) {
     const pct = Number(mathPercent[1]);
@@ -202,7 +206,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 2. Arithmetic expressions
   const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
   if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
     try {
@@ -219,7 +222,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     }
   }
 
-  // 3. Store info / address / contact
   if (
     lower.includes("time") ||
     lower.includes("kab khul") ||
@@ -229,7 +231,9 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     lower.includes("phone") ||
     lower.includes("contact") ||
     lower.includes("dukan") ||
-    lower.includes("shop")
+    lower.includes("shop") ||
+    lower.includes("खुलती") ||
+    lower.includes("कहाँ")
   ) {
     return {
       reply:
@@ -237,14 +241,14 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
         `• **टैगलाइन:** ${STORE_PROFILE.tagline}\n` +
         `• **खुलने का समय:** ${STORE_PROFILE.timings}\n` +
         `• **पता:** ${STORE_PROFILE.address}\n` +
-        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}`,
+        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}\n` +
+        `• **खासियत:** ${STORE_PROFILE.highlights.join(", ")}`,
       recommendedItems: menu.slice(0, 3),
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
   }
 
-  // 4. Offers
-  if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon")) {
+  if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("ऑफ़र")) {
     const offerLines = offers
       .map((o) => `🎁 **${o.title}** — कोड: \`${o.code}\` (${o.discount})`)
       .join("\n");
@@ -255,7 +259,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 5. Menu / Food
   if (
     lower.includes("menu") ||
     lower.includes("price") ||
@@ -267,7 +270,9 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     lower.includes("cake") ||
     lower.includes("namkeen") ||
     lower.includes("combo") ||
-    lower.includes("मिठाई")
+    lower.includes("मिठाई") ||
+    lower.includes("रेट") ||
+    lower.includes("कॉम्बो")
   ) {
     return {
       reply:
@@ -286,8 +291,8 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     reply:
       "🙏 **KshirSagar AI Mitr**\n\n" +
       (debugReason
-        ? `⚠️ **API Status:** \`${debugReason}\`\n\n`
-        : "सामान्य ज्ञान, गणित (Math), इतिहास, विज्ञान या ChatGPT वाले सवालों के लिए कृपया Netlify Environment Variables में `GEMINI_API_KEY` सेट करके साइट को एक बार **Redeploy** करें।"),
+        ? `⚠️ **API Diagnostic:** \`${debugReason}\``
+        : "कृपया Netlify Environment Variables में `GEMINI_API_KEY` चेक करें।"),
     recommendedItems: menu.slice(0, 3),
     quickFollowUps: [
       "🍬 आज की स्पेशल मिठाई और रेट बताओ",
@@ -330,7 +335,6 @@ exports.handler = async (event) => {
     const activeMenu = clientMenu || liveData.menu;
     const activeOffers = clientOffers || liveData.offers;
 
-    // Check multiple possible env variable names just in case
     const geminiKey =
       process.env.GEMINI_API_KEY ||
       process.env.VITE_GEMINI_API_KEY ||
@@ -341,7 +345,7 @@ exports.handler = async (event) => {
         userMessage,
         activeMenu,
         activeOffers,
-        "GEMINI_API_KEY not found in Netlify Environment Variables (or site not redeployed after adding key)."
+        "GEMINI_API_KEY not found in Netlify Environment Variables."
       );
       return {
         statusCode: 200,
@@ -411,14 +415,14 @@ ${JSON.stringify(activeOffers)}
       }
     ];
 
-    const callResult = await callGeminiWithFallbackModels(geminiKey, systemInstruction, contents);
+    const callResult = await callGeminiStudioAPI(geminiKey, systemInstruction, contents);
 
     if (!callResult.ok) {
       const fallbackResult = buildSmartLocalFallback(
         userMessage,
         activeMenu,
         activeOffers,
-        `Gemini API returned error: ${String(callResult.errorText || "").slice(0, 180)}`
+        callResult.errorText
       );
       return {
         statusCode: 200,

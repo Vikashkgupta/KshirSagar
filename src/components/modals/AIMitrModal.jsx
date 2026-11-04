@@ -1,12 +1,11 @@
 // File: src/components/modals/AIMitrModal.jsx
 // Universal AI Assistant (ChatGPT-style Math, GK, Coding, World Info) + Live KshirSagar Website & Airtable RAG
-// Connected to Redux cartSlice (addToCart), uiSlice (toggleCart) & local menuData
+// Fixed header icon (uses clean SVG instead of raw text ligature so "auto_awesome" text never overflows)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { addToCart } from '../../store/cartSlice';
 import { toggleCart } from '../../store/uiSlice';
-// import { menuData as staticMenuData } from '../../data/menuData';
 import * as menuDataModule from '../../data/menuData';
 
 const QUICK_PROMPTS = [
@@ -48,14 +47,12 @@ const AIMitrModal = () => {
   const [liveOffersCache, setLiveOffersCache] = useState([]);
   const messagesEndRef = useRef(null);
 
-  // Global helper so MobileBottomNav's 5th button can open/close this modal
   useEffect(() => {
     window.toggleKshirSagarAI = () => setIsOpen((prev) => !prev);
     window.openKshirSagarAI = () => setIsOpen(true);
     window.closeKshirSagarAI = () => setIsOpen(false);
   }, []);
 
-  // Pre-fetch live Airtable Menu & Offers from your existing endpoints when opened
   useEffect(() => {
     if (!isOpen || liveMenuCache.length > 0) return;
 
@@ -91,7 +88,6 @@ const AIMitrModal = () => {
     }
   }, [messages, isLoading, isOpen]);
 
-  // Reads visible text from the live frontend DOM (#landing) so AI knows everything written on the website
   const getFrontendWebsiteText = () => {
     try {
       const landingEl = document.getElementById('landing') || document.querySelector('main');
@@ -102,28 +98,46 @@ const AIMitrModal = () => {
     }
   };
 
-  // Normalizes static/live menu items so AI always has full menu data
+  const getStaticMenuFallback = () => {
+    try {
+      const raw =
+        menuDataModule.default ||
+        menuDataModule.menuData ||
+        menuDataModule.MENU_DATA ||
+        menuDataModule.items ||
+        Object.values(menuDataModule).find((v) => Array.isArray(v));
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  };
+
   const getNormalizedClientMenu = () => {
     if (liveMenuCache.length > 0) {
-      return liveMenuCache.map((item, i) => ({
-        id: item.id || `live-${i}`,
-        name: item.name || item.Name || item.fields?.Name || 'Special Item',
-        category: item.category || item.Category || item.fields?.Category || 'Sweets',
-        price: Number(item.price || item.Price || item.fields?.Price || 0),
-        unit: item.unit || item.variant || item.fields?.Unit || '',
-        image: item.image || item.img || item.fields?.Image || '/sweet.jpg'
-      })).filter((x) => x.price > 0);
+      return liveMenuCache
+        .map((item, i) => ({
+          id: item.id || `live-${i}`,
+          name: item.name || item.Name || item.fields?.Name || 'Special Item',
+          category: item.category || item.Category || item.fields?.Category || 'Sweets',
+          price: Number(item.price || item.Price || item.fields?.Price || 0),
+          unit: item.unit || item.variant || item.fields?.Unit || '',
+          image: item.image || item.img || item.fields?.Image || '/sweet.jpg'
+        }))
+        .filter((x) => x.price > 0);
     }
 
-    if (Array.isArray(staticMenuData) && staticMenuData.length > 0) {
-      return staticMenuData.map((item, i) => ({
-        id: item.id || `static-${i}`,
-        name: item.name || item.title || 'Special',
-        category: item.category || 'Sweets',
-        price: Number(item.price || item.halfPrice || item.fullPrice || 0),
-        unit: item.variant || item.unit || '',
-        image: item.image || item.img || '/sweet.jpg'
-      })).filter((x) => x.price > 0);
+    const staticList = getStaticMenuFallback();
+    if (staticList.length > 0) {
+      return staticList
+        .map((item, i) => ({
+          id: item.id || `static-${i}`,
+          name: item.name || item.title || 'Special',
+          category: item.category || 'Sweets',
+          price: Number(item.price || item.halfPrice || item.fullPrice || 0),
+          unit: item.variant || item.unit || '',
+          image: item.image || item.img || '/sweet.jpg'
+        }))
+        .filter((x) => x.price > 0);
     }
 
     return null;
@@ -201,7 +215,7 @@ const AIMitrModal = () => {
           id: 'bot-err-' + Date.now(),
           sender: 'bot',
           text:
-            '⚠️ कनेक्शन में थोड़ी दिक्कत आई। अगर आप लोकल (`npm run dev`) पर टेस्ट कर रहे हैं, तो Netlify Functions चलाने के लिए `npx netlify dev` चलाएँ या Netlify पर डिप्लॉय करें।',
+            '⚠️ कनेक्शन में थोड़ी दिक्कत आई। अगर आप लोकल पर टेस्ट कर रहे हैं, तो `npx netlify dev` चलाएँ या Netlify पर डिप्लॉय करें।',
           recommendedItems: []
         }
       ]);
@@ -284,7 +298,7 @@ const AIMitrModal = () => {
           marginBottom: '74px'
         }}
       >
-        {/* Top Header */}
+        {/* Top Header — Clean SVG Sparkle Icon (fixes "auto_awesome" text overlap!) */}
         <div
           style={{
             background: 'linear-gradient(135deg, #6b1d1d 0%, #9a3412 55%, #d97706 100%)',
@@ -292,10 +306,11 @@ const AIMitrModal = () => {
             padding: '13px 16px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            gap: '8px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
             <div
               style={{
                 width: '38px',
@@ -305,16 +320,17 @@ const AIMitrModal = () => {
                 border: '1px solid rgba(254, 243, 199, 0.45)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                flexShrink: 0
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '21px', color: '#fde68a' }}>
-                auto_awesome
-              </span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fde68a" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+              </svg>
             </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                क्षीर सागर AI मित्र
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span>क्षीर सागर AI मित्र</span>
                 <span
                   style={{
                     fontSize: '9.5px',
@@ -328,13 +344,13 @@ const AIMitrModal = () => {
                   AI + LIVE DATA
                 </span>
               </div>
-              <div style={{ fontSize: '11px', color: '#fde68a' }}>
-                Ask Anything (Math, GK, World) + Live Menu & Offers
+              <div style={{ fontSize: '11px', color: '#fde68a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Ask Anything (Math, GK, World) + Live Menu
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
             {totalQty > 0 && (
               <button
                 type="button"
@@ -347,13 +363,13 @@ const AIMitrModal = () => {
                   color: '#6b1d1d',
                   border: 'none',
                   borderRadius: '99px',
-                  padding: '4px 10px',
+                  padding: '4px 9px',
                   fontSize: '11px',
                   fontWeight: 800,
                   cursor: 'pointer'
                 }}
               >
-                🛒 Cart ({totalQty})
+                🛒 ({totalQty})
               </button>
             )}
             <button
@@ -439,13 +455,13 @@ const AIMitrModal = () => {
                   border: msg.sender === 'user' ? 'none' : '1px solid #f0e4d0',
                   borderBottomRightRadius: msg.sender === 'user' ? '4px' : '16px',
                   borderBottomLeftRadius: msg.sender === 'bot' ? '4px' : '16px',
-                  boxShadow: '0 2px 8px rgba(107, 29, 29, 0.06)'
+                  boxShadow: '0 2px 8px rgba(107, 29, 29, 0.06)',
+                  wordBreak: 'break-word'
                 }}
               >
                 {renderFormattedText(msg.text)}
               </div>
 
-              {/* Suggested Menu Item Cards (Only shown when AI recommends food items) */}
               {msg.sender === 'bot' &&
                 Array.isArray(msg.recommendedItems) &&
                 msg.recommendedItems.length > 0 && (
