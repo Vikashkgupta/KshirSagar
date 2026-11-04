@@ -1,9 +1,6 @@
 // File: netlify/functions/aiChat.cjs
-// KshirSagar AI Mitr — Hybrid General-Purpose AI (like ChatGPT) + Live Website & Airtable RAG Assistant
-// Capabilities:
-// 1. Answers ANY general-knowledge, math, coding, science, writing, or world question just like ChatGPT.
-// 2. Simultaneously has full access to KshirSagar's Live Airtable Menu, Live Airtable Offers, and Frontend Website Content.
-// 3. Only shows Dish Cards (+ Add button) when the conversation is actually about KshirSagar food/menu/combos.
+// KshirSagar AI Mitr — Universal ChatGPT-Style Assistant + Live KshirSagar Website & Airtable RAG
+// Supports BOTH new Google AI Studio Auth Keys (starting with "AQ.") AND legacy "AIza" keys via x-goog-api-key header
 
 const STORE_PROFILE = {
   name: "KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)",
@@ -22,23 +19,21 @@ const STORE_PROFILE = {
     "Hygienic Preparation (पूरी तरह साफ़-सुथरी और हाइजीनिक किचन)",
     "Custom Cake Orders (बर्थडे, एनिवर्सरी और पार्टी के लिए कस्टम केक ऑर्डर की सुविधा)",
     "Zero Commission Direct Ordering (बिना किसी एक्स्ट्रा ऐप कमीशन के सीधा दुकान के रेट पर होम डिलीवरी)"
-  ],
-  orderingProcess:
-    "कस्टमर वेबसाइट या Android App पर Menu देख सकते हैं, आइटम को Cart में जोड़ सकते हैं, Custom Cake या Dish Request भेज सकते हैं, और Checkout फॉर्म में अपना नाम, मोबाइल नंबर, पता और Optional Email (इंस्टेंट ईमेल रिसीट के लिए) भरकर ऑर्डर कर सकते हैं। ऑर्डर तुरंत WhatsApp और दुकानदार के पास पहुँच जाता है।"
+  ]
 };
 
 const FALLBACK_MENU = [
   { id: "m1", name: "Kaju Katli", category: "Sweets", price: 840, unit: "1 kg", image: "/sweet.jpg", available: true },
   { id: "m2", name: "Rasmalai", category: "Sweets", price: 45, unit: "1 pc", image: "/sweet.jpg", available: true },
-  { id: "m3", name: "Desi Ghee Ghewar", category: "Sweets", price: 480, unit: "1 kg", image: "/sweet.jpg", available: true },
+  { id: "m3", name: "Desi Ghee Ghewar", category: "Sweets", price: 500, unit: "1 kg", image: "/sweet.jpg", available: true },
   { id: "m4", name: "Besan Laddu", category: "Sweets", price: 360, unit: "1 kg", image: "/sweet.jpg", available: true },
-  { id: "m5", name: "Soan Papdi", category: "Sweets", price: 320, unit: "1 kg", image: "/sweet.jpg", available: true },
+  { id: "m5", name: "Soan Papdi", category: "Sweets", price: 200, unit: "1 kg", image: "/sweet.jpg", available: true },
   { id: "m6", name: "Truffle Cake", category: "Sweets", price: 450, unit: "500g", image: "/sweet.jpg", available: true },
-  { id: "m7", name: "Red Velvet Cake", category: "Sweets", price: 480, unit: "500g", image: "/sweet.jpg", available: true },
+  { id: "m7", name: "Red Velvet Cake", category: "Sweets", price: 450, unit: "500g", image: "/sweet.jpg", available: true },
   { id: "m8", name: "Special Mixture Namkeen", category: "Namkeen", price: 280, unit: "1 kg", image: "/namkeen.jpg", available: true },
   { id: "m9", name: "Aloo Bhujia", category: "Namkeen", price: 240, unit: "1 kg", image: "/namkeen.jpg", available: true },
   { id: "m10", name: "Salted Peanuts", category: "Namkeen", price: 220, unit: "1 kg", image: "/namkeen.jpg", available: true },
-  { id: "m11", name: "Crispy Samosa", category: "Snacks", price: 20, unit: "2 pcs", image: "/snak.jpg", available: true },
+  { id: "m11", name: "Onion Pakoda", category: "Snacks", price: 50, unit: "Plate", image: "/snak.jpg", available: true },
   { id: "m12", name: "Masala Dosa", category: "Snacks", price: 90, unit: "Plate", image: "/snak.jpg", available: true },
   { id: "m13", name: "Veg Chowmein (Full)", category: "Snacks", price: 110, unit: "Full", image: "/snak.jpg", available: true },
   { id: "m14", name: "Veg Manchurian (Full)", category: "Snacks", price: 130, unit: "Full", image: "/snak.jpg", available: true },
@@ -109,12 +104,88 @@ async function fetchLiveAirtableData(baseId, apiKey) {
 
     return { menu, offers, source: "airtable_live" };
   } catch (err) {
-    console.error("Airtable fetch warning, using fallback data:", err.message);
     return { menu: FALLBACK_MENU, offers: FALLBACK_OFFERS, source: "fallback_cache" };
   }
 }
 
-function buildSmartLocalFallback(userMessage, menu, offers) {
+// Multi-Model & Multi-Endpoint Caller supporting both "AQ." Auth Keys and "AIza" Keys
+async function callGeminiWithFallbackModels(apiKey, systemInstruction, contents) {
+  const cleanKey = String(apiKey || "").trim();
+  const candidateModels = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
+  ];
+
+  let lastErrorText = "";
+
+  for (const modelName of candidateModels) {
+    // Pass key in BOTH x-goog-api-key header AND ?key= query param for maximum compatibility
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": cleanKey
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: {
+            temperature: 0.5,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, data, modelUsed: modelName };
+      } else {
+        lastErrorText = await res.text();
+      }
+    } catch (err) {
+      lastErrorText = err.message;
+    }
+  }
+
+  // If AQ. key is bound to Vertex/Agent Platform endpoint, try aiplatform.googleapis.com
+  if (cleanKey.startsWith("AQ.")) {
+    try {
+      const vertexEndpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`;
+      const vRes = await fetch(vertexEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": cleanKey
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: {
+            temperature: 0.5,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        return { ok: true, data: vData, modelUsed: "vertex-gemini-2.5-flash" };
+      } else {
+        lastErrorText = await vRes.text();
+      }
+    } catch (err) {
+      lastErrorText = err.message;
+    }
+  }
+
+  return { ok: false, errorText: lastErrorText };
+}
+
+function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
@@ -131,7 +202,7 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
     };
   }
 
-  // 2. Arithmetic expressions (e.g., "25 * 45", "1200 / 8")
+  // 2. Arithmetic expressions
   const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
   if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
     try {
@@ -144,11 +215,11 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
         };
       }
     } catch {
-      // fall through
+      // continue
     }
   }
 
-  // 3. Store info / address / contact / website details
+  // 3. Store info / address / contact
   if (
     lower.includes("time") ||
     lower.includes("kab khul") ||
@@ -158,9 +229,7 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
     lower.includes("phone") ||
     lower.includes("contact") ||
     lower.includes("dukan") ||
-    lower.includes("shop") ||
-    lower.includes("kshirsagar") ||
-    lower.includes("क्षीर")
+    lower.includes("shop")
   ) {
     return {
       reply:
@@ -168,15 +237,14 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
         `• **टैगलाइन:** ${STORE_PROFILE.tagline}\n` +
         `• **खुलने का समय:** ${STORE_PROFILE.timings}\n` +
         `• **पता:** ${STORE_PROFILE.address}\n` +
-        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}\n` +
-        `• **खासियत:** ${STORE_PROFILE.highlights.join(", ")}`,
+        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}`,
       recommendedItems: menu.slice(0, 3),
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
   }
 
-  // 4. Offers & Promo Codes
-  if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("chhut")) {
+  // 4. Offers
+  if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon")) {
     const offerLines = offers
       .map((o) => `🎁 **${o.title}** — कोड: \`${o.code}\` (${o.discount})`)
       .join("\n");
@@ -187,7 +255,7 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
     };
   }
 
-  // 5. Menu / Price / Food queries
+  // 5. Menu / Food
   if (
     lower.includes("menu") ||
     lower.includes("price") ||
@@ -216,15 +284,16 @@ function buildSmartLocalFallback(userMessage, menu, offers) {
 
   return {
     reply:
-      "🙏 **नमस्ते! मैं KshirSagar AI Mitr हूँ।**\n\n" +
-      "आप मुझसे **दुकान का लाइव मेन्यू, ऑफ़र्स, बजट कॉम्बो** के साथ-साथ **गणित (Math), कोडिंग, सामान्य ज्ञान (GK) या दुनिया का कोई भी सवाल** (बिल्कुल ChatGPT की तरह) पूछ सकते हैं!\n\n" +
-      "*(नोट: बाहरी दुनिया के सभी सवालों के जवाब के लिए Netlify Environment Variables में GEMINI_API_KEY ज़रूर सेट करें।)*",
+      "🙏 **KshirSagar AI Mitr**\n\n" +
+      (debugReason
+        ? `⚠️ **API Status:** \`${debugReason}\`\n\n`
+        : "सामान्य ज्ञान, गणित (Math), इतिहास, विज्ञान या ChatGPT वाले सवालों के लिए कृपया Netlify Environment Variables में `GEMINI_API_KEY` सेट करके साइट को एक बार **Redeploy** करें।"),
     recommendedItems: menu.slice(0, 3),
     quickFollowUps: [
       "🍬 आज की स्पेशल मिठाई और रेट बताओ",
       "🧮 15% of 840 कितना होता है?",
       "🏷️ आज के लाइव ऑफ़र्स क्या हैं?",
-      "🌍 AI क्या होता है, आसान भाषा में समझाओ"
+      "📍 दुकान का समय और पता"
     ]
   };
 }
@@ -253,7 +322,6 @@ exports.handler = async (event) => {
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
     const pageContext = String(body.pageContext || "").slice(0, 3500);
 
-    // 1. Fetch Live Menu & Offers from Airtable (plus merge with any frontend menu/offers passed in)
     const liveData = await fetchLiveAirtableData(
       process.env.AIRTABLE_BASE_ID,
       process.env.AIRTABLE_API_KEY
@@ -262,24 +330,31 @@ exports.handler = async (event) => {
     const activeMenu = clientMenu || liveData.menu;
     const activeOffers = clientOffers || liveData.offers;
 
-    const geminiKey = process.env.GEMINI_API_KEY;
+    // Check multiple possible env variable names just in case
+    const geminiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
 
-    // Fallback if GEMINI_API_KEY is not set
     if (!geminiKey) {
-      const fallbackResult = buildSmartLocalFallback(userMessage, activeMenu, activeOffers);
+      const fallbackResult = buildSmartLocalFallback(
+        userMessage,
+        activeMenu,
+        activeOffers,
+        "GEMINI_API_KEY not found in Netlify Environment Variables (or site not redeployed after adding key)."
+      );
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           success: true,
-          mode: "smart_local_fallback",
+          mode: "missing_env_key",
           dataSource: liveData.source,
           ...fallbackResult
         })
       };
     }
 
-    // 2. Hybrid System Prompt: Full ChatGPT General Intelligence + Full KshirSagar Website & Airtable Knowledge
     const systemInstruction = `
 You are "KshirSagar AI Mitr", a powerful dual-mode AI assistant built into the KshirSagar Sweets & Bakers website (https://kshirsagarsweets.netlify.app/).
 
@@ -287,7 +362,7 @@ YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
 
 CAPABILITY 1 — UNIVERSAL GENERAL AI ASSISTANT (LIKE CHATGPT):
 - The user can ask you ANYTHING in the world: math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
-- Whenever the user asks a general question (not about the shop), answer it thoroughly, accurately, and naturally just like ChatGPT! Never refuse a general question by saying "I am only a sweet shop bot".
+- Whenever the user asks a general question (not about the shop), answer it thoroughly, accurately, and naturally just like ChatGPT! Never refuse a general question.
 - For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in your JSON output so dish cards are NOT shown unnecessarily.
 
 CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE AIRTABLE MENU & OFFERS EXPERT:
@@ -296,7 +371,7 @@ CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE AIRTABLE MENU & OFFERS EXPERT:
 === 1. OFFICIAL WEBSITE & STORE DETAILS ===
 ${JSON.stringify(STORE_PROFILE, null, 2)}
 
-=== 2. LIVE FRONTEND PAGE CONTENT (EXTRACTED FROM USER'S SCREEN) ===
+=== 2. LIVE FRONTEND PAGE CONTENT ===
 ${pageContext || "Standard KshirSagar storefront loaded."}
 
 === 3. LIVE AIRTABLE MENU TABLE (REAL-TIME ITEMS & PRICES IN ₹) ===
@@ -306,28 +381,24 @@ ${JSON.stringify(
     name: m.name,
     category: m.category,
     price: m.price,
-    unit: m.unit || "",
-    description: m.description || ""
+    unit: m.unit || ""
   }))
 )}
 
-=== 4. LIVE AIRTABLE OFFERS TABLE (ACTIVE PROMO CODES & DEALS) ===
+=== 4. LIVE AIRTABLE OFFERS TABLE ===
 ${JSON.stringify(activeOffers)}
 
 === OUTPUT FORMAT RULES ===
 - Match the user's language naturally (Hindi, Hinglish, or English).
-- If the user asks to add to cart, remind them they can tap the "+ Add" button on the suggested dish cards below your message.
-- Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general ChatGPT questions (like math, GK, coding, etc.), set "showFoodCards": false and "recommendedItemNames": [].
+- Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general ChatGPT questions, set "showFoodCards": false and "recommendedItemNames": [].
 - Return STRICT JSON matching this exact schema:
 {
-  "reply": "Your complete, helpful markdown response (can include bullet points, bold text, code/math steps, or menu details)",
+  "reply": "Your complete, helpful markdown response",
   "showFoodCards": true or false,
   "recommendedItemNames": ["Exact Menu Item Name 1", "Exact Menu Item Name 2"],
   "quickFollowUps": ["Relevant follow-up 1", "Relevant follow-up 2", "Relevant follow-up 3"]
 }
 `;
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
 
     const contents = [
       ...chatHistory.map((msg) => ({
@@ -340,35 +411,28 @@ ${JSON.stringify(activeOffers)}
       }
     ];
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents,
-        generationConfig: {
-          temperature: 0.5,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    const callResult = await callGeminiWithFallbackModels(geminiKey, systemInstruction, contents);
 
-    if (!geminiRes.ok) {
-      const fallbackResult = buildSmartLocalFallback(userMessage, activeMenu, activeOffers);
+    if (!callResult.ok) {
+      const fallbackResult = buildSmartLocalFallback(
+        userMessage,
+        activeMenu,
+        activeOffers,
+        `Gemini API returned error: ${String(callResult.errorText || "").slice(0, 180)}`
+      );
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           success: true,
-          mode: "smart_fallback",
+          mode: "api_error_fallback",
           dataSource: liveData.source,
           ...fallbackResult
         })
       };
     }
 
-    const geminiData = await geminiRes.json();
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const rawText = callResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
     let parsed;
     try {
       parsed = JSON.parse(rawText);
@@ -381,7 +445,6 @@ ${JSON.stringify(activeOffers)}
       };
     }
 
-    // Only attach recommendedItems if showFoodCards is true
     let matchedItems = [];
     if (parsed.showFoodCards) {
       const names = Array.isArray(parsed.recommendedItemNames) ? parsed.recommendedItemNames : [];
@@ -403,6 +466,7 @@ ${JSON.stringify(activeOffers)}
       body: JSON.stringify({
         success: true,
         mode: "gemini_universal_plus_rag",
+        modelUsed: callResult.modelUsed,
         dataSource: liveData.source,
         reply: parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?",
         recommendedItems: matchedItems.slice(0, 4),
@@ -413,8 +477,7 @@ ${JSON.stringify(activeOffers)}
       })
     };
   } catch (err) {
-    console.error("aiChat error:", err);
-    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS);
+    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS, err.message);
     return {
       statusCode: 200,
       headers,
