@@ -8,6 +8,8 @@ import { addToCart } from '../../store/cartSlice';
 import { toggleCart } from '../../store/uiSlice';
 import * as menuDataModule from '../../data/menuData';
 
+import { useModalBack } from '../../hooks/useModalBack';
+
 const QUICK_PROMPTS = [
   '🍬 आज की स्पेशल मिठाई और रेट बताओ',
   '🏷️ एयरटेबल के लाइव ऑफ़र्स क्या हैं?',
@@ -29,6 +31,7 @@ const AIMitrModal = () => {
   const totalQty = cartItems.reduce((acc, item) => acc + item.qty, 0);
 
   const [isOpen, setIsOpen] = useState(false);
+  useModalBack(isOpen, () => setIsOpen(false), 'ai-mitr-modal');
   const [messages, setMessages] = useState([
     {
       id: 'welcome-1',

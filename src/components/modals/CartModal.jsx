@@ -27,17 +27,19 @@ const CartModal = () => {
   const baseTotal = items.reduce((acc, item) => acc + item.price * item.qty, 0);
   const grandTotal = baseTotal + tip;
 
-  // Handle escape key
-  useEffect(() => {
-    const handleEsc = (e) => {
-      if (e.key === 'Escape' && isCartOpen) {
-        dispatch(toggleCart(false));
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isCartOpen, dispatch]);
+  // // Handle escape key
+  // useEffect(() => {
+  //   const handleEsc = (e) => {
+  //     if (e.key === 'Escape' && isCartOpen) {
+  //       dispatch(toggleCart(false));
+  //     }
+  //   };
+  //   window.addEventListener('keydown', handleEsc);
+  //   return () => window.removeEventListener('keydown', handleEsc);
+  // }, [isCartOpen, dispatch]);
 
+
+  
   const shakeField = (ref) => {
     if (ref.current) {
       ref.current.classList.remove('animate-[shake_0.4s_ease]');
