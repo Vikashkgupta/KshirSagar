@@ -17,7 +17,7 @@ import { useModalBack } from '../../hooks/useModalBack';
 // ============================================================================
 // 👉 APNA CUTE LADDU AI PNG LOGO LINK YAHAN DAALEIN:
 // ============================================================================
-const LADDU_AI_LOGO = '/logo.png';
+const LADDU_AI_LOGO = '/laddu.png';
 
 const LIVE_NETLIFY_BASE = 'https://kshirsagarsweets.netlify.app';
 

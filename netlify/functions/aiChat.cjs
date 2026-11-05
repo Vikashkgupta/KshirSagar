@@ -1,6 +1,9 @@
 // File: netlify/functions/aiChat.cjs
 // Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers
-// Clean responses without traffic/error excuses or undefined offer fields.
+// Optimized for Google AI Studio Free Tier:
+// 1. Filters out deprecated 2.5 models, TTS/audio/image/embedding models, and zero-quota preview models.
+// 2. Prioritizes the newest Gemini 3.x & Gemma 3 models first so it doesn't waste requests on 404/429 models.
+// 3. Caches the working model in memory across warm serverless invocations.
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -48,6 +51,10 @@ const FALLBACK_OFFERS = [
   { title: "Festival Sweet Deal", code: "KSHIR10", discount: "₹500 से ऊपर के ऑर्डर पर 10% की छूट", active: true },
   { title: "Party Combo Offer", code: "PARTY50", discount: "पिज़्ज़ा और स्नैक्स कॉम्बो पर ₹50 की छूट", active: true }
 ];
+
+// Warm-instance cache so we don't call ListModels on every single chat message
+let cachedWorkingModel = null;
+let cachedAvailableModels = null;
 
 async function fetchLiveAirtableData(baseId, apiKey) {
   if (!baseId || !apiKey) {
@@ -109,50 +116,117 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
+// Filters out non-text, TTS, and retired 2.5 models that cause 404/429 errors for new users
+function isCleanTextModel(name) {
+  const n = String(name || "").toLowerCase();
+  if (
+    n.includes("tts") ||
+    n.includes("image") ||
+    n.includes("imagen") ||
+    n.includes("veo") ||
+    n.includes("embedding") ||
+    n.includes("aqa") ||
+    n.includes("audio") ||
+    n.includes("robotics") ||
+    n.includes("thinking") ||
+    n.includes("learnlm") ||
+    n.includes("2.5-flash") || // Retired for new AI Studio accounts ("no longer available to new users")
+    n.includes("2.0-flash-exp")
+  ) {
+    return false;
+  }
+  return n.includes("gemini") || n.includes("gemma-3");
+}
+
+// Ranks models so current-gen 3.x Flash-Lite / Flash and Gemma-3 (14,400 RPD free quota!) are tried properly
+function scoreModelPriority(name) {
+  const n = String(name || "").toLowerCase();
+  if (n.includes("gemini-3") && n.includes("flash-lite")) return 100;
+  if (n.includes("gemini-3") && n.includes("flash")) return 95;
+  if (n === "gemini-flash-lite-latest") return 90;
+  if (n.includes("gemma-3-27b-it")) return 85; // 14,400 free requests/day on Google AI Studio!
+  if (n.includes("gemma-3-12b-it")) return 80;
+  if (n === "gemini-flash-latest") return 75;
+  if (n.includes("gemini-3") && n.includes("pro")) return 70;
+  if (n.includes("gemini-2.0-flash-lite")) return 65;
+  if (n.includes("gemini-2.0-flash")) return 60;
+  return 50;
+}
+
 async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
-  let modelsToTry = [
+  // 1. Discover and rank models once per warm container
+  if (!cachedAvailableModels) {
+    try {
+      const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+        headers: { "x-goog-api-key": cleanKey }
+      });
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const discovered = (listData.models || [])
+          .filter(
+            (m) =>
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes("generateContent")
+          )
+          .map((m) => m.name.replace("models/", ""))
+          .filter(isCleanTextModel)
+          .sort((a, b) => scoreModelPriority(b) - scoreModelPriority(a));
+
+        if (discovered.length > 0) {
+          cachedAvailableModels = discovered;
+        }
+      }
+    } catch (e) {
+      errors.push(`ListModelsErr: ${e.message}`);
+    }
+  }
+
+  const defaultCandidates = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    "gemini-3.0-flash",
+    "gemini-flash-lite-latest",
+    "gemma-3-27b-it",
+    "gemma-3-12b-it",
     "gemini-flash-latest"
   ];
 
-  try {
-    const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
-      headers: { "x-goog-api-key": cleanKey }
-    });
-    if (listRes.ok) {
-      const listData = await listRes.json();
-      const available = (listData.models || [])
-        .filter(
-          (m) =>
-            Array.isArray(m.supportedGenerationMethods) &&
-            m.supportedGenerationMethods.includes("generateContent") &&
-            m.name.includes("gemini")
-        )
-        .map((m) => m.name.replace("models/", ""));
+  let modelsToTry = cachedAvailableModels
+    ? [...new Set([...cachedAvailableModels, ...defaultCandidates])]
+    : defaultCandidates;
 
-      const flashModels = available.filter((n) => n.includes("flash"));
-      if (flashModels.length > 0) {
-        modelsToTry = [...new Set([...flashModels, ...modelsToTry])];
-      } else if (available.length > 0) {
-        modelsToTry = [...new Set([...available, ...modelsToTry])];
-      }
-    } else {
-      const listErr = await listRes.text();
-      errors.push(`ListModels(${listRes.status}): ${listErr.slice(0, 140)}`);
-    }
-  } catch (e) {
-    errors.push(`ListModelsErr: ${e.message}`);
+  // Always try the last known working model first!
+  if (cachedWorkingModel) {
+    modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
 
-  for (const modelName of modelsToTry.slice(0, 5)) {
+  for (const modelName of modelsToTry.slice(0, 7)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+    const isGemmaModel = modelName.toLowerCase().startsWith("gemma");
+
+    // Note: Gemma models on AI Studio do not support `systemInstruction` or `responseMimeType: "application/json"`,
+    // so we fold the system prompt cleanly into the first user message when calling Gemma!
+    const requestPayload = isGemmaModel
+      ? {
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `${systemInstruction}\n\nUser Question: ${contents[contents.length - 1]?.parts?.[0]?.text || "Namaste"}` }]
+            }
+          ],
+          generationConfig: { temperature: 0.5 }
+        }
+      : {
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: {
+            temperature: 0.5,
+            responseMimeType: "application/json"
+          }
+        };
 
     try {
       const res = await fetch(endpoint, {
@@ -161,22 +235,19 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
           "Content-Type": "application/json",
           "x-goog-api-key": cleanKey
         },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: {
-            temperature: 0.5,
-            responseMimeType: "application/json"
-          }
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (res.ok) {
         const data = await res.json();
+        cachedWorkingModel = modelName; // Remember this fast working model for next calls!
         return { ok: true, data, modelUsed: modelName };
       } else {
         const errBody = await res.text();
-        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 120)}`);
+        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 100)}`);
+        if (cachedWorkingModel === modelName) {
+          cachedWorkingModel = null;
+        }
       }
     } catch (err) {
       errors.push(`${modelName}: ${err.message}`);
@@ -205,7 +276,17 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
-  // 1. Percentage math calculation
+  // 1. Greetings
+  if (/^(hi+|hello+|hey+|namaste|pranam|ram ram|hlo|हाय|नमस्ते|हेलो)$/i.test(q)) {
+    return {
+      reply: "नमस्ते! मैं **Laddu AI** हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?",
+      recommendedItems: [],
+      debugError: debugReason || null,
+      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो", "🏷️ आज के ऑफ़र्स क्या हैं?"]
+    };
+  }
+
+  // 2. Percentage math calculation
   const mathPercent = lower.match(/(\d+(?:\.\d+)?)\s*%\s*(?:of|ka|की|का)\s*(\d+(?:\.\d+)?)/);
   if (mathPercent) {
     const pct = Number(mathPercent[1]);
@@ -219,7 +300,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 2. Arithmetic expressions
+  // 3. Arithmetic expressions
   const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
   if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
     try {
@@ -237,7 +318,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     }
   }
 
-  // 3. Store info / address / contact
+  // 4. Store info / address / contact
   if (
     lower.includes("time") ||
     lower.includes("kab khul") ||
@@ -264,7 +345,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 4. Offers
+  // 5. Offers
   if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("ऑफ़र")) {
     return {
       reply: `🎉 **क्षीर सागर के स्पेशल ऑफ़र्स:**\n\n${formatCleanOffers(offers)}`,
@@ -274,15 +355,39 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 5. Default clean menu & items response (No "server traffic" excuse line!)
+  // 6. Food / Menu / Budget queries
+  if (
+    lower.includes("menu") ||
+    lower.includes("price") ||
+    lower.includes("rate") ||
+    lower.includes("sweet") ||
+    lower.includes("mithai") ||
+    lower.includes("pizza") ||
+    lower.includes("snack") ||
+    lower.includes("cake") ||
+    lower.includes("namkeen") ||
+    lower.includes("combo") ||
+    lower.includes("मिठाई") ||
+    lower.includes("रेट") ||
+    lower.includes("कॉम्बो")
+  ) {
+    return {
+      reply:
+        "**क्षीर सागर के सबसे लोकप्रिय आइटम्स और ताज़ा रेट्स:**\n\n" +
+        menu
+          .slice(0, 6)
+          .map((m) => `• **${m.name}** — ₹${m.price}`)
+          .join("\n"),
+      recommendedItems: menu.slice(0, 3),
+      debugError: debugReason || null,
+      quickFollowUps: ["🍕 ₹500 में पार्टी कॉम्बो बताओ", "🏷️ आज के डिस्काउंट ऑफ़र्स", "📍 दुकान कब खुलती है?"]
+    };
+  }
+
+  // 7. General non-food / random text fallback (Doesn't dump the menu when the user typed random text like "fgffgfgfg"!)
   return {
-    reply:
-      "**क्षीर सागर के सबसे लोकप्रिय आइटम्स और ताज़ा रेट्स:**\n\n" +
-      menu
-        .slice(0, 6)
-        .map((m) => `• **${m.name}** — ₹${m.price}`)
-        .join("\n"),
-    recommendedItems: menu.slice(0, 3),
+    reply: "कृपया अपना सवाल थोड़ा स्पष्ट लिखें—आप मुझसे कोई भी सामान्य सवाल, गणित, या क्षीर सागर के मेन्यू और ऑफ़र्स के बारे में पूछ सकते हैं।",
+    recommendedItems: [],
     debugError: debugReason || null,
     quickFollowUps: [
       "🍬 आज की स्पेशल मिठाई और रेट बताओ",
@@ -386,7 +491,7 @@ ${JSON.stringify(activeOffers)}
 === OUTPUT FORMAT RULES ===
 - Match the user's language naturally (Hindi, Hinglish, or English).
 - Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general questions, set "showFoodCards": false and "recommendedItemNames": [].
-- Return STRICT JSON matching this exact schema:
+- Return STRICT JSON matching this exact schema (no markdown code fences around the JSON):
 {
   "reply": "Your complete, helpful markdown response",
   "showFoodCards": true or false,
@@ -427,7 +532,10 @@ ${JSON.stringify(activeOffers)}
       };
     }
 
-    const rawText = callResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let rawText = callResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    // Strip markdown ```json ... ``` fences if returned by Gemma models
+    rawText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
     let parsed;
     try {
       parsed = JSON.parse(rawText);
