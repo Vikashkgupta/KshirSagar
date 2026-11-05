@@ -1,8 +1,9 @@
 // File: netlify/functions/aiChat.cjs
-// KshirSagar AI Mitr — Universal ChatGPT-Style Assistant + Live KshirSagar Website & Airtable RAG
-// Auto-discovers available Gemini models via ListModels so it never fails on model-name mismatches
+// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers
+// Clean responses without traffic/error excuses or undefined offer fields.
 
 const STORE_PROFILE = {
+  aiName: "Laddu AI",
   name: "KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)",
   established: "Since 1998 — Tradition of Excellence",
   tagline: "हमेशा कुछ नया (Hamesha Kuch Naya)",
@@ -44,8 +45,8 @@ const FALLBACK_MENU = [
 ];
 
 const FALLBACK_OFFERS = [
-  { title: "Festival Sweet Deal", code: "KSHIR10", discount: "10% OFF on orders above ₹500", active: true },
-  { title: "Party Combo Offer", code: "PARTY50", discount: "Flat ₹50 OFF on Pizza + Snacks Orders above ₹399", active: true }
+  { title: "Festival Sweet Deal", code: "KSHIR10", discount: "₹500 से ऊपर के ऑर्डर पर 10% की छूट", active: true },
+  { title: "Party Combo Offer", code: "PARTY50", discount: "पिज़्ज़ा और स्नैक्स कॉम्बो पर ₹50 की छूट", active: true }
 ];
 
 async function fetchLiveAirtableData(baseId, apiKey) {
@@ -91,14 +92,14 @@ async function fetchLiveAirtableData(baseId, apiKey) {
     if (offersRes.ok) {
       const offersData = await offersRes.json();
       if (offersData.records && offersData.records.length > 0) {
-        offers = offersData.records
-          .filter((rec) => rec.fields.Active !== false)
+        const parsedOffers = offersData.records
+          .filter((rec) => rec.fields && rec.fields.Active !== false)
           .map((rec) => ({
             title: rec.fields.Title || rec.fields.Name || "Special Offer",
-            code: rec.fields.Code || rec.fields.PromoCode || "SPECIAL",
-            discount: rec.fields.Discount || rec.fields.Description || "Special Discount",
-            description: rec.fields.Description || ""
+            code: rec.fields.Code || rec.fields.PromoCode || "",
+            discount: rec.fields.Discount || rec.fields.Description || ""
           }));
+        if (parsedOffers.length > 0) offers = parsedOffers;
       }
     }
 
@@ -108,12 +109,10 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// Automatically discovers the active Flash models on your Google AI Studio account and calls generativelanguage.googleapis.com
 async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
-  // 1. Default priority list of current & legacy Flash models
   let modelsToTry = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
@@ -123,7 +122,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
     "gemini-flash-latest"
   ];
 
-  // 2. Dynamically fetch exact available models for this key from v1beta/models
   try {
     const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
       headers: { "x-goog-api-key": cleanKey }
@@ -139,7 +137,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
         )
         .map((m) => m.name.replace("models/", ""));
 
-      // Prioritize flash-lite and flash models (which have the highest free-tier quota)
       const flashModels = available.filter((n) => n.includes("flash"));
       if (flashModels.length > 0) {
         modelsToTry = [...new Set([...flashModels, ...modelsToTry])];
@@ -154,7 +151,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
     errors.push(`ListModelsErr: ${e.message}`);
   }
 
-  // 3. Try generating content using ONLY x-goog-api-key header (never duplicate ?key= + header)
   for (const modelName of modelsToTry.slice(0, 5)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
 
@@ -190,30 +186,49 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   return { ok: false, errorText: errors.join(" | ") };
 }
 
+function formatCleanOffers(offers) {
+  const list = Array.isArray(offers) && offers.length > 0 ? offers : FALLBACK_OFFERS;
+  return list
+    .map((o) => {
+      const title = o.title || o.Title || o.Name || "स्पेशल ऑफ़र";
+      const code = o.code || o.Code || o.PromoCode || "";
+      const discount = o.discount || o.Discount || o.description || o.Description || "";
+      let str = `• **${title}**`;
+      if (code && code !== "undefined") str += ` — कोड: \`${code}\``;
+      if (discount && discount !== "undefined") str += ` (${discount})`;
+      return str;
+    })
+    .join("\n");
+}
+
 function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
+  // 1. Percentage math calculation
   const mathPercent = lower.match(/(\d+(?:\.\d+)?)\s*%\s*(?:of|ka|की|का)\s*(\d+(?:\.\d+)?)/);
   if (mathPercent) {
     const pct = Number(mathPercent[1]);
     const total = Number(mathPercent[2]);
     const ans = (pct / 100) * total;
     return {
-      reply: `🧮 **गणना (Calculation):**\n${total} का ${pct}% = **${ans}** होता है।`,
+      reply: `**${total}** का **${pct}%** = **${ans}** होता है।`,
       recommendedItems: [],
+      debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🏷️ आज के ऑफ़र्स क्या हैं?"]
     };
   }
 
+  // 2. Arithmetic expressions
   const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
   if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
     try {
       const result = Function(`"use strict"; return (${cleanMath})`)();
       if (typeof result === "number" && isFinite(result)) {
         return {
-          reply: `🧮 **उत्तर (Math Result):**\n\`${cleanMath} = ${result}\``,
+          reply: `\`${cleanMath} = ${result}\``,
           recommendedItems: [],
+          debugError: debugReason || null,
           quickFollowUps: ["🍬 KshirSagar मेन्यू दिखाओ", "🍕 ₹500 का कॉम्बो बनाओ", "📍 दुकान का समय और पता"]
         };
       }
@@ -222,6 +237,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     }
   }
 
+  // 3. Store info / address / contact
   if (
     lower.includes("time") ||
     lower.includes("kab khul") ||
@@ -233,71 +249,45 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     lower.includes("dukan") ||
     lower.includes("shop") ||
     lower.includes("खुलती") ||
-    lower.includes("कहाँ")
+    lower.includes("कहाँ") ||
+    lower.includes("पता")
   ) {
     return {
       reply:
-        `🏪 **${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
-        `• **टैगलाइन:** ${STORE_PROFILE.tagline}\n` +
-        `• **खुलने का समय:** ${STORE_PROFILE.timings}\n` +
+        `**${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
+        `• **समय:** ${STORE_PROFILE.timings}\n` +
         `• **पता:** ${STORE_PROFILE.address}\n` +
-        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}\n` +
-        `• **खासियत:** ${STORE_PROFILE.highlights.join(", ")}`,
-      recommendedItems: menu.slice(0, 3),
+        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}`,
+      recommendedItems: [],
+      debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
   }
 
+  // 4. Offers
   if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("ऑफ़र")) {
-    const offerLines = offers
-      .map((o) => `🎁 **${o.title}** — कोड: \`${o.code}\` (${o.discount})`)
-      .join("\n");
     return {
-      reply: `🎉 **KshirSagar के लाइव ऑफ़र्स (Airtable से):**\n\n${offerLines}`,
+      reply: `🎉 **क्षीर सागर के स्पेशल ऑफ़र्स:**\n\n${formatCleanOffers(offers)}`,
       recommendedItems: menu.slice(0, 3),
+      debugError: debugReason || null,
       quickFollowUps: ["🍬 बेस्ट मिठाइयाँ दिखाओ", "🍕 पिज़्ज़ा और स्नैक्स दिखाओ", "📍 दुकान का पता और नंबर"]
     };
   }
 
-  if (
-    lower.includes("menu") ||
-    lower.includes("price") ||
-    lower.includes("rate") ||
-    lower.includes("sweet") ||
-    lower.includes("mithai") ||
-    lower.includes("pizza") ||
-    lower.includes("snack") ||
-    lower.includes("cake") ||
-    lower.includes("namkeen") ||
-    lower.includes("combo") ||
-    lower.includes("मिठाई") ||
-    lower.includes("रेट") ||
-    lower.includes("कॉम्बो")
-  ) {
-    return {
-      reply:
-        `🍽️ **KshirSagar लाइव मेन्यू और रेट्स:**\n` +
-        menu
-          .slice(0, 8)
-          .map((m) => `• **${m.name}** (${m.category}) — ₹${m.price}`)
-          .join("\n") +
-        `\n\nनीचे दिए गए कार्ड्स पर **+ Add** दबाकर आप इन्हें सीधे कार्ट में जोड़ सकते हैं:`,
-      recommendedItems: menu.slice(0, 4),
-      quickFollowUps: ["🍕 ₹500 में पार्टी कॉम्बो बताओ", "🏷️ आज के डिस्काउंट ऑफ़र्स", "📍 दुकान कब खुलती है?"]
-    };
-  }
-
+  // 5. Default clean menu & items response (No "server traffic" excuse line!)
   return {
     reply:
-      "🙏 **KshirSagar AI Mitr**\n\n" +
-      (debugReason
-        ? `⚠️ **API Diagnostic:** \`${debugReason}\``
-        : "कृपया Netlify Environment Variables में `GEMINI_API_KEY` चेक करें।"),
+      "**क्षीर सागर के सबसे लोकप्रिय आइटम्स और ताज़ा रेट्स:**\n\n" +
+      menu
+        .slice(0, 6)
+        .map((m) => `• **${m.name}** — ₹${m.price}`)
+        .join("\n"),
     recommendedItems: menu.slice(0, 3),
+    debugError: debugReason || null,
     quickFollowUps: [
       "🍬 आज की स्पेशल मिठाई और रेट बताओ",
-      "🧮 15% of 840 कितना होता है?",
-      "🏷️ आज के लाइव ऑफ़र्स क्या हैं?",
+      "🍕 ₹500 के बजट में पार्टी कॉम्बो सजेस्ट करो",
+      "🏷️ आज के स्पेशल ऑफ़र्स क्या हैं?",
       "📍 दुकान का समय और पता"
     ]
   };
@@ -345,7 +335,7 @@ exports.handler = async (event) => {
         userMessage,
         activeMenu,
         activeOffers,
-        "GEMINI_API_KEY not found in Netlify Environment Variables."
+        "GEMINI_API_KEY not found in environment variables."
       );
       return {
         statusCode: 200,
@@ -360,16 +350,17 @@ exports.handler = async (event) => {
     }
 
     const systemInstruction = `
-You are "KshirSagar AI Mitr", a powerful dual-mode AI assistant built into the KshirSagar Sweets & Bakers website (https://kshirsagarsweets.netlify.app/).
+You are "Laddu AI", the official intelligent assistant of KshirSagar Sweets & Bakers (https://kshirsagarsweets.netlify.app/).
+Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is always "Laddu AI".
 
 YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
 
-CAPABILITY 1 — UNIVERSAL GENERAL AI ASSISTANT (LIKE CHATGPT):
+CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
 - The user can ask you ANYTHING in the world: math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
-- Whenever the user asks a general question (not about the shop), answer it thoroughly, accurately, and naturally just like ChatGPT! Never refuse a general question.
+- Whenever the user asks a general question (not about the shop), answer it thoroughly, accurately, and naturally!
 - For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in your JSON output so dish cards are NOT shown unnecessarily.
 
-CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE AIRTABLE MENU & OFFERS EXPERT:
+CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU & OFFERS EXPERT:
 - Whenever the user asks about the shop, website content, sweets, menu items, prices, party combos, custom cakes, timings, address, contact details, or active offers, use the exact real-time data provided below:
 
 === 1. OFFICIAL WEBSITE & STORE DETAILS ===
@@ -394,7 +385,7 @@ ${JSON.stringify(activeOffers)}
 
 === OUTPUT FORMAT RULES ===
 - Match the user's language naturally (Hindi, Hinglish, or English).
-- Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general ChatGPT questions, set "showFoodCards": false and "recommendedItemNames": [].
+- Only set "showFoodCards": true and populate "recommendedItemNames" when the user is asking about food, menu, prices, combos, or the shop's items. For general questions, set "showFoodCards": false and "recommendedItemNames": [].
 - Return STRICT JSON matching this exact schema:
 {
   "reply": "Your complete, helpful markdown response",
@@ -469,7 +460,7 @@ ${JSON.stringify(activeOffers)}
       headers,
       body: JSON.stringify({
         success: true,
-        mode: "gemini_universal_plus_rag",
+        mode: "laddu_ai_live",
         modelUsed: callResult.modelUsed,
         dataSource: liveData.source,
         reply: parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?",
@@ -477,7 +468,7 @@ ${JSON.stringify(activeOffers)}
         quickFollowUps:
           Array.isArray(parsed.quickFollowUps) && parsed.quickFollowUps.length > 0
             ? parsed.quickFollowUps.slice(0, 4)
-            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🧮 कोई मैथ या GK का सवाल पूछो"]
+            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🧮 कोई भी सवाल पूछो"]
       })
     };
   } catch (err) {
