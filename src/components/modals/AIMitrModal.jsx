@@ -1,29 +1,26 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Universal AI Assistant (ChatGPT-style Math, GK, Coding, World Info) + Live KshirSagar Website & Airtable RAG
-// Fixed header icon (uses clean SVG instead of raw text ligature so "auto_awesome" text never overflows)
+// Full-Page ChatGPT Mobile/Desktop UI/UX Replica for KshirSagar AI Mitr
+// Directly replaces the old bottom-sheet with the exact full-page ChatGPT layout shown in your screenshot!
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { addToCart } from '../../store/cartSlice';
 import { toggleCart } from '../../store/uiSlice';
 import * as menuDataModule from '../../data/menuData';
-
 import { useModalBack } from '../../hooks/useModalBack';
 
 const QUICK_PROMPTS = [
   '🍬 आज की स्पेशल मिठाई और रेट बताओ',
-  '🏷️ एयरटेबल के लाइव ऑफ़र्स क्या हैं?',
-  '🍕 ₹500 के बजट में पार्टी कॉम्बो बनाओ',
-  '🧮 Math या दुनिया का कोई भी सवाल पूछो',
-  '📍 दुकान कब खुलती है और कहाँ है?'
+  '🍕 ₹500 के बजट में पार्टी कॉम्बो सजेस्ट करो',
+  '📍 दुकान कब खुलती है और कहाँ है?',
+  '🧮 15% of 840 कितना होता है?',
+  '🏷️ आज के लाइव ऑफ़र्स क्या हैं?'
 ];
 
 const INITIAL_WELCOME =
   '🙏 **नमस्ते! मैं क्षीर सागर AI मित्र हूँ।**\n\n' +
-  'आप मेरा इस्तेमाल **दोनों कामों** के लिए कर सकते हैं:\n' +
-  '1️⃣ **KshirSagar स्मार्ट असिस्टेंट:** वेबसाइट पर लिखा कोई भी डेटा, **Airtable का लाइव मेन्यू कार्ड, रेट्स, ऑफ़र्स**, कस्टम केक या दुकान की टाइमिंग पूछें।\n' +
-  '2️⃣ **Normal ChatGPT की तरह:** मुझसे **Math के सवाल, जनरल नॉलेज (GK), कोडिंग, साइंस, या बाहरी दुनिया का कोई भी सवाल** पूछें—मैं सब बताऊँगा!\n\n' +
-  'नीचे किसी भी बटन पर टैप करें या अपना सवाल लिखें:';
+  'आप मुझसे **नॉर्मल ChatGPT की तरह** दुनिया का कोई भी सवाल पूछ सकते हैं (Math, सामान्य ज्ञान, कोडिंग, साइंस) या फिर **KshirSagar का लाइव मेन्यू, रेट्स, और ऑफ़र्स** जान सकते हैं।\n\n' +
+  'नीचे किसी भी सुझाव पर टैप करें या अपना सवाल लिखें:';
 
 const AIMitrModal = () => {
   const dispatch = useDispatch();
@@ -31,7 +28,9 @@ const AIMitrModal = () => {
   const totalQty = cartItems.reduce((acc, item) => acc + item.qty, 0);
 
   const [isOpen, setIsOpen] = useState(false);
+  // Integrates with centralized Android physical/gesture Back button & Escape key stack
   useModalBack(isOpen, () => setIsOpen(false), 'ai-mitr-modal');
+
   const [messages, setMessages] = useState([
     {
       id: 'welcome-1',
@@ -42,9 +41,10 @@ const AIMitrModal = () => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [thinkingStep, setThinkingStep] = useState('✨ AI सोच रहा है...');
   const [chips, setChips] = useState(QUICK_PROMPTS);
   const [isListening, setIsListening] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [toastText, setToastText] = useState('');
   const [addedKeys, setAddedKeys] = useState({});
   const [liveMenuCache, setLiveMenuCache] = useState([]);
   const [liveOffersCache, setLiveOffersCache] = useState([]);
@@ -56,6 +56,12 @@ const AIMitrModal = () => {
     window.closeKshirSagarAI = () => setIsOpen(false);
   }, []);
 
+  const showToast = (text) => {
+    setToastText(text);
+    setTimeout(() => setToastText(''), 2200);
+  };
+
+  // Pre-fetch live Airtable Menu & Offers
   useEffect(() => {
     if (!isOpen || liveMenuCache.length > 0) return;
 
@@ -78,7 +84,7 @@ const AIMitrModal = () => {
           if (oList.length > 0) setLiveOffersCache(oList);
         }
       } catch (e) {
-        // Fallback handled gracefully
+        // Fallback handled
       }
     }
 
@@ -151,13 +157,14 @@ const AIMitrModal = () => {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#6b1d1d;">$1</strong>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
       .replace(
         /`(.*?)`/g,
-        '<code style="background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:4px;font-weight:700;">$1</code>'
+        '<code class="bg-gray-100 text-amber-800 px-1.5 py-0.5 rounded text-xs font-mono font-bold">$1</code>'
       )
+      .replace(/\n\n/g, '</p><p class="mt-3">')
       .replace(/\n/g, '<br/>');
-    return <span dangerouslySetInnerHTML={{ __html: html }} />;
+    return <span dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />;
   };
 
   const sendMessage = async (textToSend) => {
@@ -173,9 +180,6 @@ const AIMitrModal = () => {
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
-    setThinkingStep('🧠 Analyzing Question & Live Data...');
-
-    const t1 = setTimeout(() => setThinkingStep('✨ Generating Response...'), 750);
 
     try {
       const historyPayload = messages.slice(-8).map((m) => ({
@@ -195,13 +199,11 @@ const AIMitrModal = () => {
         })
       });
 
-      clearTimeout(t1);
-
       const data = await response.json();
       const botMsg = {
         id: 'bot-' + Date.now(),
         sender: 'bot',
-        text: data.reply || 'यहाँ आपके सवाल का जवाब है:',
+        text: data.reply || 'यहाँ आपके सवाल का उत्तर है।',
         recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : []
       };
 
@@ -211,7 +213,6 @@ const AIMitrModal = () => {
         setChips(data.quickFollowUps);
       }
     } catch (error) {
-      clearTimeout(t1);
       setMessages((prev) => [
         ...prev,
         {
@@ -247,6 +248,7 @@ const AIMitrModal = () => {
 
     const k = item.id || item.name;
     setAddedKeys((prev) => ({ ...prev, [k]: true }));
+    showToast(`${item.name} कार्ट में जोड़ दिया गया!`);
     setTimeout(() => {
       setAddedKeys((prev) => ({ ...prev, [k]: false }));
     }, 1400);
@@ -255,7 +257,7 @@ const AIMitrModal = () => {
   const handleVoiceInput = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Voice input के लिए कृपया Chrome ब्राउज़र का उपयोग करें।');
+      showToast('वॉइस इनपुट के लिए Chrome ब्राउज़र का उपयोग करें।');
       return;
     }
 
@@ -278,253 +280,131 @@ const AIMitrModal = () => {
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4"
-      onClick={() => setIsOpen(false)}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: '460px',
-          height: '82vh',
-          maxHeight: '670px',
-          backgroundColor: '#fdfaf5',
-          borderTopLeftRadius: '26px',
-          borderTopRightRadius: '26px',
-          border: '1px solid #f3e5cc',
-          boxShadow: '0 -12px 40px rgba(107, 29, 29, 0.35)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          marginBottom: '74px'
-        }}
-      >
-        {/* Top Header — Clean SVG Sparkle Icon (fixes "auto_awesome" text overlap!) */}
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #6b1d1d 0%, #9a3412 55%, #d97706 100%)',
-            color: '#ffffff',
-            padding: '13px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-            <div
-              style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '12px',
-                background: 'rgba(255, 255, 255, 0.18)',
-                border: '1px solid rgba(254, 243, 199, 0.45)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fde68a" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-              </svg>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <span>क्षीर सागर AI मित्र</span>
-                <span
-                  style={{
-                    fontSize: '9.5px',
-                    background: '#16a34a',
-                    color: '#ffffff',
-                    padding: '2px 7px',
-                    borderRadius: '99px',
-                    fontWeight: 700
-                  }}
-                >
-                  AI + LIVE DATA
-                </span>
-              </div>
-              <div style={{ fontSize: '11px', color: '#fde68a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Ask Anything (Math, GK, World) + Live Menu
-              </div>
-            </div>
-          </div>
+    <div className="fixed inset-0 z-[10000] bg-white flex flex-col h-screen w-screen overflow-hidden text-[#0d0d0d]">
+      
+      {/* Toast Alert Notification */}
+      {toastText && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10002] bg-gray-900 text-white text-xs px-4 py-2 rounded-full shadow-lg transition-all">
+          {toastText}
+        </div>
+      )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            {totalQty > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false);
-                  dispatch(toggleCart(true));
-                }}
-                style={{
-                  background: '#fde68a',
-                  color: '#6b1d1d',
-                  border: 'none',
-                  borderRadius: '99px',
-                  padding: '4px 9px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  cursor: 'pointer'
-                }}
-              >
-                🛒 ({totalQty})
-              </button>
-            )}
+      {/* ================= 1. TOP HEADER (Matching Screenshot) ================= */}
+      <header className="flex-none flex items-center justify-between px-4 py-3 bg-white/95 backdrop-blur-md border-b border-gray-100 z-20">
+        <div className="flex items-center gap-3">
+          {/* Back Button (Closes Full Page Mode cleanly) */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            title="पीछे जाएँ (Back)"
+          >
+            <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div>
+            <h1 className="text-base font-semibold text-gray-900 leading-tight flex items-center gap-1.5">
+              <span>KshirSagar AI Mitr</span>
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+            </h1>
+            <p className="text-xs text-gray-500">Live Menu & ChatGPT Assistance</p>
+          </div>
+        </div>
+
+        {/* Right Header Actions: Cart Badge + New Chat + Three Dots Menu */}
+        <div className="flex items-center gap-1">
+          {totalQty > 0 && (
             <button
               type="button"
-              onClick={() => setIsOpen(false)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.18)',
-                border: 'none',
-                color: '#ffffff',
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                fontSize: '15px',
-                fontWeight: 700
+              onClick={() => {
+                setIsOpen(false);
+                dispatch(toggleCart(true));
               }}
+              className="mr-1 bg-amber-100 text-amber-900 text-xs px-2.5 py-1.5 rounded-full font-semibold hover:bg-amber-200 transition-colors"
+              title="Cart खोलें"
             >
-              ✕
+              🛒 {totalQty}
             </button>
-          </div>
-        </div>
+          )}
 
-        {/* Store Quick Strip */}
-        <div
-          style={{
-            background: '#fff8eb',
-            borderBottom: '1px solid #f5deb3',
-            padding: '6px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '11px',
-            color: '#7c2d12'
-          }}
-        >
-          <span>⏰ 8:00 AM – 10:00 PM • 📍 Nai Bazar, Mairwa</span>
-          <a
-            href="https://wa.me/918226935738?text=Namaste%20KshirSagar!"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              background: '#dcfce7',
-              color: '#166534',
-              padding: '2px 9px',
-              borderRadius: '99px',
-              fontWeight: 700,
-              textDecoration: 'none'
+          {/* New Chat Edit Icon */}
+          <button
+            type="button"
+            onClick={() => {
+              setMessages([
+                {
+                  id: 'welcome-' + Date.now(),
+                  sender: 'bot',
+                  text: INITIAL_WELCOME,
+                  recommendedItems: []
+                }
+              ]);
+              showToast('नया चैट सत्र शुरू हुआ');
             }}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            title="नया चैट शुरू करें"
           >
-            💬 WhatsApp
-          </a>
-        </div>
+            <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
 
-        {/* Messages Feed */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '14px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px'
-          }}
-        >
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start'
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: '88%',
-                  padding: '10px 13px',
-                  borderRadius: '16px',
-                  fontSize: '13px',
-                  lineHeight: 1.55,
-                  backgroundColor: msg.sender === 'user' ? '#d97706' : '#ffffff',
-                  color: msg.sender === 'user' ? '#ffffff' : '#292524',
-                  border: msg.sender === 'user' ? 'none' : '1px solid #f0e4d0',
-                  borderBottomRightRadius: msg.sender === 'user' ? '4px' : '16px',
-                  borderBottomLeftRadius: msg.sender === 'bot' ? '4px' : '16px',
-                  boxShadow: '0 2px 8px rgba(107, 29, 29, 0.06)',
-                  wordBreak: 'break-word'
-                }}
-              >
+          {/* Three Dots Menu Icon */}
+          <button
+            type="button"
+            onClick={() => setShowOptions(true)}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            title="विकल्प"
+          >
+            <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      {/* ================= 2. CHAT FEED (Full Page) ================= */}
+      <main className="flex-1 overflow-y-auto px-4 py-5 space-y-6 max-w-3xl w-full mx-auto" style={{ scrollbarWidth: 'none' }}>
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`w-full flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            {msg.sender === 'user' ? (
+              // User message bubble (Gray rounded pill bubble on right)
+              <div className="max-w-[85%] sm:max-w-[75%] bg-[#f4f4f4] rounded-[24px] px-5 py-4 text-[14.5px] leading-relaxed text-[#0d0d0d] shadow-sm">
                 {renderFormattedText(msg.text)}
               </div>
+            ) : (
+              // AI message (Clean ChatGPT typography with optional dish cards)
+              <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-[#0d0d0d] space-y-2">
+                {renderFormattedText(msg.text)}
 
-              {msg.sender === 'bot' &&
-                Array.isArray(msg.recommendedItems) &&
-                msg.recommendedItems.length > 0 && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      marginTop: '8px',
-                      width: '100%'
-                    }}
-                  >
+                {/* Render food cards if AI recommends items from KshirSagar Menu */}
+                {Array.isArray(msg.recommendedItems) && msg.recommendedItems.length > 0 && (
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {msg.recommendedItems.map((item, idx) => {
                       const key = item.id || item.name || idx;
                       const isAdded = !!addedKeys[key];
                       return (
                         <div
                           key={key}
-                          style={{
-                            background: '#ffffff',
-                            border: '1px solid #f3d6a4',
-                            borderRadius: '14px',
-                            padding: '8px 11px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '10px',
-                            boxShadow: '0 2px 6px rgba(217, 119, 6, 0.08)'
-                          }}
+                          className="flex items-center justify-between p-2.5 rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm"
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
                             <img
                               src={item.image || '/sweet.jpg'}
                               alt={item.name}
                               onError={(e) => {
                                 e.currentTarget.src = '/sweet.jpg';
                               }}
-                              style={{
-                                width: '42px',
-                                height: '42px',
-                                borderRadius: '10px',
-                                objectFit: 'cover',
-                                border: '1px solid #f3e5cc',
-                                flexShrink: 0
-                              }}
+                              className="w-10 h-10 rounded-lg object-cover border border-amber-200 flex-shrink-0"
                             />
-                            <div style={{ minWidth: 0 }}>
-                              <div
-                                style={{
-                                  fontWeight: 700,
-                                  fontSize: '13px',
-                                  color: '#6b1d1d',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis'
-                                }}
-                              >
-                                {item.name}
-                              </div>
-                              <div style={{ fontSize: '11.5px', color: '#d97706', fontWeight: 700 }}>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-xs text-gray-900 truncate">{item.name}</div>
+                              <div className="text-xs text-amber-700 font-bold">
                                 ₹{item.price} {item.unit ? `• ${item.unit}` : ''}
                               </div>
                             </div>
@@ -533,18 +413,9 @@ const AIMitrModal = () => {
                           <button
                             type="button"
                             onClick={() => handleAddToReduxCart(item)}
-                            style={{
-                              background: isAdded ? '#166534' : '#d97706',
-                              color: '#ffffff',
-                              border: 'none',
-                              borderRadius: '8px',
-                              padding: '6px 12px',
-                              fontSize: '11.5px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              flexShrink: 0,
-                              transition: 'background 0.2s'
-                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow active:scale-95 transition-all text-white flex-shrink-0 ${
+                              isAdded ? 'bg-emerald-600' : 'bg-amber-600 hover:bg-amber-700'
+                            }`}
                           >
                             {isAdded ? '✓ Added' : '+ Add'}
                           </button>
@@ -553,130 +424,156 @@ const AIMitrModal = () => {
                     })}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Typing indicator */}
+        {isLoading && (
+          <div className="w-full flex justify-start">
+            <div className="flex items-center gap-1.5 py-2 px-1 text-gray-400 text-sm">
+              <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"></span>
+              <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0.15s' }}></span>
+              <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0.3s' }}></span>
             </div>
-          ))}
+          </div>
+        )}
 
-          {isLoading && (
-            <div
-              style={{
-                alignSelf: 'flex-start',
-                background: '#fff8eb',
-                border: '1px solid #f59e0b',
-                color: '#92400e',
-                padding: '8px 13px',
-                borderRadius: '12px',
-                fontSize: '11.5px',
-                fontWeight: 600
-              }}
-            >
-              {thinkingStep}
-            </div>
-          )}
+        <div ref={messagesEndRef} />
+      </main>
 
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Quick Chips */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '6px',
-            overflowX: 'auto',
-            padding: '8px 12px',
-            background: '#ffffff',
-            borderTop: '1px solid #f3e5cc'
-          }}
-        >
+      {/* ================= 3. BOTTOM INPUT DOCK (Matching Screenshot) ================= */}
+      <footer className="flex-none px-4 py-3 bg-white border-t border-gray-100 max-w-3xl w-full mx-auto">
+        {/* Quick prompt chips */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 text-xs font-medium text-gray-600" style={{ scrollbarWidth: 'none' }}>
           {chips.map((chip, idx) => (
             <button
               key={idx}
               type="button"
               onClick={() => sendMessage(chip)}
-              style={{
-                background: '#fff8eb',
-                color: '#7c2d12',
-                border: '1px solid #f3d6a4',
-                borderRadius: '999px',
-                padding: '5px 11px',
-                fontSize: '11px',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                cursor: 'pointer'
-              }}
+              className="px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 whitespace-nowrap active:scale-95 transition-all"
             >
               {chip}
             </button>
           ))}
         </div>
 
-        {/* Input Form */}
+        {/* Input Bar Pill */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             sendMessage(input);
           }}
-          style={{
-            padding: '10px 12px',
-            background: '#ffffff',
-            borderTop: '1px solid #f0e4d0',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
+          className="relative flex items-center bg-[#f4f4f4] rounded-full px-3 py-1.5 shadow-inner"
         >
+          {/* Plus Button */}
           <button
             type="button"
-            onClick={handleVoiceInput}
-            title="बोलकर पूछें (Voice Input)"
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '50%',
-              border: '1px solid #f3d6a4',
-              background: isListening ? '#fee2e2' : '#fff8eb',
-              color: isListening ? '#dc2626' : '#b45309',
-              cursor: 'pointer',
-              fontSize: '16px',
-              flexShrink: 0
-            }}
+            onClick={() => showToast('अतिरिक्त अटैचमेंट विकल्प')}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-600 hover:text-gray-900 active:scale-95 transition-transform"
+            title="विकल्प"
           >
-            🎙️
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
           </button>
+
+          {/* Text Input */}
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? '🎙️ बोलिए, मैं सुन रहा हूँ...' : 'मेन्यू, ऑफ़र, या दुनिया का कोई भी सवाल पूछें...'}
-            style={{
-              flex: 1,
-              border: '1px solid #e7d8c1',
-              borderRadius: '999px',
-              padding: '9px 14px',
-              fontSize: '13px',
-              outline: 'none',
-              color: '#292524',
-              background: '#fdfaf5'
-            }}
+            placeholder={isListening ? '🎙️ बोलिए, मैं सुन रहा हूँ...' : 'Reply to ChatGPT'}
+            className="flex-1 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+            autoComplete="off"
           />
-          <button
-            type="submit"
-            disabled={isLoading}
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '50%',
-              border: 'none',
-              background: 'linear-gradient(135deg, #6b1d1d, #d97706)',
-              color: '#ffffff',
-              cursor: 'pointer',
-              fontSize: '15px',
-              flexShrink: 0
-            }}
-          >
-            ➤
-          </button>
+
+          {/* Right Controls: Mic + Blue Waveform Sphere Button */}
+          <div className="flex items-center gap-1.5 pr-0.5">
+            <button
+              type="button"
+              onClick={handleVoiceInput}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
+                isListening ? 'text-red-500 animate-pulse' : 'text-gray-600 hover:text-gray-900'
+              }`}
+              title="बोलकर पूछें (Voice input)"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            </button>
+
+            {/* Blue Action Button (Toggles between Wave icon & Send arrow) */}
+            <button
+              type="submit"
+              className="w-10 h-10 rounded-full bg-[#1b64f2] text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+              title="Send"
+            >
+              {input.trim().length > 0 ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="9" width="2" height="6" rx="1" />
+                  <rect x="7" y="5" width="2" height="14" rx="1" />
+                  <rect x="11" y="2" width="2" height="20" rx="1" />
+                  <rect x="15" y="6" width="2" height="12" rx="1" />
+                  <rect x="19" y="9" width="2" height="6" rx="1" />
+                </svg>
+              )}
+            </button>
+          </div>
         </form>
-      </div>
+      </footer>
+
+      {/* Options Dropdown Modal */}
+      {showOptions && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[10005] flex items-end md:items-center justify-center p-0 md:p-4"
+          onClick={() => setShowOptions(false)}
+        >
+          <div
+            className="bg-white w-full max-w-sm rounded-t-2xl md:rounded-2xl p-5 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-semibold text-gray-900 text-sm">चैट सेटिंग्स व विकल्प</h3>
+              <button
+                type="button"
+                onClick={() => setShowOptions(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="space-y-2 text-sm text-gray-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setMessages([]);
+                  setShowOptions(false);
+                  showToast('चैट हिस्ट्री साफ़ कर दी गई');
+                }}
+                className="w-full text-left p-2.5 rounded-lg hover:bg-gray-100 flex items-center gap-2.5"
+              >
+                <span>🗑️</span> <span>चैट हिस्ट्री साफ़ करें (Clear Chat)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOptions(false);
+                  setIsOpen(false);
+                }}
+                className="w-full text-left p-2.5 rounded-lg hover:bg-gray-100 flex items-center gap-2.5"
+              >
+                <span>🏪</span> <span>KshirSagar वेबसाइट पर वापस जाएँ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
