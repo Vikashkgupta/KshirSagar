@@ -1,7 +1,11 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Ultra-Fast Smart Assistant for KshirSagar Sweets & Bakers + Instant Supabase Session Logging
-// Includes automatic URL sanitization (strips accidental Markdown [url](url) brackets from env vars)
-// and a strict 8.5s total execution budget so it never triggers Netlify's 10s free-tier 502 Bad Gateway timeout!
+// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers + Instant Supabase Session Logging
+// Fixed:
+// 1. Clean plain-string SUPABASE_HOST_URL (no Markdown brackets)
+// 2. Calls `gemini-flash-lite-latest` and `gemini-flash-latest` directly with a generous 7.5s timeout (removes 404 gemma models)
+
+const SUPABASE_PROJECT_ID = "frltketibbthwqydnhls";
+const DEFAULT_SUPABASE_URL = "https://" + SUPABASE_PROJECT_ID + ".supabase.co";
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -52,8 +56,7 @@ const FALLBACK_OFFERS = [
 
 let cachedWorkingModel = null;
 
-// Fast fetch wrapper with strict timeout so Netlify Function never exceeds Netlify's 10s limit
-async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 6500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -76,17 +79,11 @@ function getSupabaseHeaders(supabaseKey, extra = {}) {
   return h;
 }
 
-// Automatically cleans SUPABASE_URL even if pasted as Markdown `[https://...](https://...)` in Netlify!
+// Guaranteed clean URL extractor: strips any accidental Markdown `[url](url)` or whitespace
 function resolveSupabaseConfig() {
-  const rawUrl =
-    process.env.SUPABASE_URL ||
-    process.env.VITE_SUPABASE_URL ||
-    "https://frltketibbthwqydnhls.supabase.co";
-
-  const urlMatch = String(rawUrl).match(/https:\/\/[a-z0-9-]+\.supabase\.co/i);
-  const supabaseUrl = urlMatch
-    ? urlMatch[0]
-    : "https://frltketibbthwqydnhls.supabase.co";
+  const rawEnvUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const match = String(rawEnvUrl).match(/https:\/\/[a-z0-9-]+\.supabase\.co/i);
+  const supabaseUrl = match ? match[0] : DEFAULT_SUPABASE_URL;
 
   const supabaseKey = String(
     process.env.SUPABASE_ANON_KEY ||
@@ -101,7 +98,7 @@ function resolveSupabaseConfig() {
   return { supabaseUrl, supabaseKey };
 }
 
-// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) within 2.5 seconds max
+// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`)
 async function logChatToSupabase({
   sessionId,
   customerName,
@@ -130,7 +127,7 @@ async function logChatToSupabase({
     const existingRes = await fetchWithTimeout(
       getUrl,
       { method: "GET", headers: getSupabaseHeaders(supabaseKey) },
-      2200
+      3500
     );
 
     if (!existingRes.ok) {
@@ -186,7 +183,7 @@ async function logChatToSupabase({
             updated_at: nowIso
           })
         },
-        2200
+        3500
       );
 
       if (!patchRes.ok) {
@@ -215,7 +212,7 @@ async function logChatToSupabase({
             updated_at: nowIso
           })
         },
-        2200
+        3500
       );
 
       if (!postRes.ok) {
@@ -242,12 +239,12 @@ async function fetchLiveAirtableData(baseId, apiKey) {
       fetchWithTimeout(
         `https://api.airtable.com/v0/${baseId}/Menu`,
         { headers: { Authorization: `Bearer ${apiKey}` } },
-        1800
+        2000
       ),
       fetchWithTimeout(
         `https://api.airtable.com/v0/${baseId}/Offers`,
         { headers: { Authorization: `Bearer ${apiKey}` } },
-        1800
+        2000
       )
     ]);
 
@@ -296,49 +293,22 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// Ultra-fast 2-model caller with 3.2s timeout per model so total execution stays well under Netlify's 10s limit
+// Calls ONLY verified active Gemini models (`gemini-flash-lite-latest` & `gemini-flash-latest`) with a 7.5s timeout
 async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
   let modelsToTry = [
-    "gemma-3-27b-it",
-    "gemma-3-12b-it",
-    "gemini-flash-lite-latest"
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest"
   ];
 
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
 
-  for (const modelName of modelsToTry.slice(0, 2)) {
+  for (const modelName of modelsToTry) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-    const isGemmaModel = modelName.toLowerCase().startsWith("gemma");
-
-    const requestPayload = isGemmaModel
-      ? {
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `${systemInstruction}\n\nUser Question: ${
-                    contents[contents.length - 1]?.parts?.[0]?.text || "Namaste"
-                  }`
-                }
-              ]
-            }
-          ],
-          generationConfig: { temperature: 0.5 }
-        }
-      : {
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: {
-            temperature: 0.5,
-            responseMimeType: "application/json"
-          }
-        };
 
     try {
       const res = await fetchWithTimeout(
@@ -349,9 +319,16 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
             "Content-Type": "application/json",
             "x-goog-api-key": cleanKey
           },
-          body: JSON.stringify(requestPayload)
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents,
+            generationConfig: {
+              temperature: 0.5,
+              responseMimeType: "application/json"
+            }
+          })
         },
-        3200
+        7500
       );
 
       if (res.ok) {
@@ -542,7 +519,7 @@ exports.handler = async (event) => {
           method: "GET",
           headers: getSupabaseHeaders(supabaseKey)
         },
-        3500
+        4000
       );
 
       if (!res.ok) {
@@ -584,10 +561,10 @@ exports.handler = async (event) => {
     const customerName = String(body.customerName || "Guest User").trim();
     const customerMobile = String(body.customerMobile || "").trim();
     const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 120);
-    const chatHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
+    const chatHistory = Array.isArray(body.history) ? body.history.slice(-6) : [];
     const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
-    const pageContext = String(body.pageContext || "").slice(0, 3500);
+    const pageContext = String(body.pageContext || "").slice(0, 1500);
 
     const liveData = clientMenu
       ? { menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" }
@@ -644,7 +621,7 @@ CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU & OFFERS EXPERT:
 - Whenever the user asks about the shop, website content, sweets, menu items, prices, party combos, custom cakes, timings, address, contact details, or active offers, use the exact real-time data provided below:
 
 === 1. OFFICIAL WEBSITE & STORE DETAILS ===
-${JSON.stringify(STORE_PROFILE, null, 2)}
+${JSON.stringify(STORE_PROFILE)}
 
 === 2. LIVE FRONTEND PAGE CONTENT ===
 ${pageContext || "Standard KshirSagar storefront loaded."}
