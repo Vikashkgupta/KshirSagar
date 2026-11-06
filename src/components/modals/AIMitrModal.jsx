@@ -36,8 +36,8 @@ const QUICK_PROMPTS = [
 ];
 
 const INITIAL_WELCOME =
-  'नमस्ते! मैं **Laddu AI** हूँ।\n\n' +
-  'क्षीर सागर की मिठाइयों और ऑफ़र्स से लेकर आपके रोज़मर्रा के किसी भी सवाल या काम तक—बेझिझक कुछ भी पूछें!';
+  'नमस्ते! 👋 KshirSagar में आपका स्वागत है।\n\n' +
+  'मैं हूँ Laddu AI! बताइए, आज आपकी क्या मदद करूँ? 😊';
 
 // Generates or retrieves a persistent Visitor Session ID (e.g., "KS-8492-A1B2") in localStorage
 function getOrCreateVisitorSessionId() {

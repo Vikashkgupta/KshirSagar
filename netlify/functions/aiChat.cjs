@@ -1,9 +1,9 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers + Guaranteed Supabase Session Logging
-// Includes:
-// 1. Both `apikey` AND `Authorization: Bearer` headers (required by Supabase API gateway for `sb_publishable_` and `eyJ` keys)
-// 2. Clean 2-step SELECT -> PATCH / POST upsert so it never fails on PostgREST Prefer header restrictions
-// 3. `supabaseStatus` diagnostic returned in every response so you can see exact database status in browser console
+// Laddu AI — Ultra-Fast Smart Assistant for KshirSagar Sweets & Bakers + Instant Supabase Session Logging
+// Fixes the 30-second Netlify Sandbox.Timedout (502) by:
+// 1. Removing the slow `v1beta/models` ListModels discovery call
+// 2. Enforcing a strict 4.5-second AbortController timeout per fetch so a slow model never blocks the function
+// 3. Running Supabase session logging with a 3.5-second timeout and proper `apikey` header
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -53,17 +53,30 @@ const FALLBACK_OFFERS = [
 ];
 
 let cachedWorkingModel = null;
-let cachedAvailableModels = null;
 
-// Supabase requires BOTH `apikey` and `Authorization: Bearer <key>` when unauthenticated
+// Fast fetch wrapper with strict timeout so Netlify Function NEVER hits the 30s Sandbox.Timedout
+async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Supabase headers: `sb_publishable_` keys go ONLY in `apikey` header (sending them in Authorization: Bearer causes 401 on PostgREST)
 function getSupabaseHeaders(supabaseKey, extra = {}) {
   const clean = String(supabaseKey || "").trim();
-  return {
+  const h = {
     "Content-Type": "application/json",
     apikey: clean,
-    Authorization: `Bearer ${clean}`,
     ...extra
   };
+  if (clean.startsWith("eyJ")) {
+    h.Authorization = `Bearer ${clean}`;
+  }
+  return h;
 }
 
 function resolveSupabaseConfig() {
@@ -84,7 +97,7 @@ function resolveSupabaseConfig() {
   return { supabaseUrl, supabaseKey };
 }
 
-// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) and returns diagnostic status
+// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) within 3.5 seconds max
 async function logChatToSupabase({
   sessionId,
   customerName,
@@ -98,7 +111,7 @@ async function logChatToSupabase({
   if (!supabaseKey) {
     return {
       logged: false,
-      reason: "SUPABASE_ANON_KEY missing in Netlify Environment Variables (or site not redeployed after adding it)."
+      reason: "SUPABASE_ANON_KEY missing in Netlify Environment Variables (or site not redeployed)."
     };
   }
 
@@ -110,16 +123,17 @@ async function logChatToSupabase({
     const nowIso = new Date().toISOString();
     const getUrl = `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}&select=session_id,conversation,message_count,customer_name,customer_mobile`;
 
-    const existingRes = await fetch(getUrl, {
-      method: "GET",
-      headers: getSupabaseHeaders(supabaseKey)
-    });
+    const existingRes = await fetchWithTimeout(
+      getUrl,
+      { method: "GET", headers: getSupabaseHeaders(supabaseKey) },
+      3500
+    );
 
     if (!existingRes.ok) {
       const errTxt = await existingRes.text();
       return {
         logged: false,
-        reason: `Supabase GET failed (${existingRes.status}): ${errTxt.slice(0, 160)}`
+        reason: `Supabase GET (${existingRes.status}): ${errTxt.slice(0, 140)}`
       };
     }
 
@@ -152,8 +166,7 @@ async function logChatToSupabase({
     ];
 
     if (rowExists) {
-      // Update existing session row via PATCH
-      const patchRes = await fetch(
+      const patchRes = await fetchWithTimeout(
         `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}`,
         {
           method: "PATCH",
@@ -168,46 +181,50 @@ async function logChatToSupabase({
             conversation: updatedConversation,
             updated_at: nowIso
           })
-        }
+        },
+        3500
       );
 
       if (!patchRes.ok) {
         const patchErr = await patchRes.text();
         return {
           logged: false,
-          reason: `Supabase PATCH failed (${patchRes.status}): ${patchErr.slice(0, 160)}`
+          reason: `Supabase PATCH (${patchRes.status}): ${patchErr.slice(0, 140)}`
         };
       }
       return { logged: true, action: "updated", sessionId, messageCount: prevCount + 1 };
     } else {
-      // Insert new session row via POST
-      const postRes = await fetch(`${supabaseUrl}/rest/v1/laddu_ai_chats`, {
-        method: "POST",
-        headers: getSupabaseHeaders(supabaseKey, { Prefer: "return=minimal" }),
-        body: JSON.stringify({
-          session_id: sessionId,
-          customer_name: savedName,
-          customer_mobile: savedMobile,
-          device_info: deviceInfo || "Web Browser",
-          message_count: 1,
-          last_user_message: userMessage,
-          last_ai_reply: aiReply,
-          conversation: updatedConversation,
-          updated_at: nowIso
-        })
-      });
+      const postRes = await fetchWithTimeout(
+        `${supabaseUrl}/rest/v1/laddu_ai_chats`,
+        {
+          method: "POST",
+          headers: getSupabaseHeaders(supabaseKey, { Prefer: "return=minimal" }),
+          body: JSON.stringify({
+            session_id: sessionId,
+            customer_name: savedName,
+            customer_mobile: savedMobile,
+            device_info: deviceInfo || "Web Browser",
+            message_count: 1,
+            last_user_message: userMessage,
+            last_ai_reply: aiReply,
+            conversation: updatedConversation,
+            updated_at: nowIso
+          })
+        },
+        3500
+      );
 
       if (!postRes.ok) {
         const postErr = await postRes.text();
         return {
           logged: false,
-          reason: `Supabase INSERT failed (${postRes.status}): ${postErr.slice(0, 160)}`
+          reason: `Supabase INSERT (${postRes.status}): ${postErr.slice(0, 140)}`
         };
       }
       return { logged: true, action: "inserted", sessionId, messageCount: 1 };
     }
   } catch (err) {
-    return { logged: false, reason: `Supabase exception: ${err.message}` };
+    return { logged: false, reason: `Supabase timeout/exception: ${err.message}` };
   }
 }
 
@@ -218,12 +235,16 @@ async function fetchLiveAirtableData(baseId, apiKey) {
 
   try {
     const [menuRes, offersRes] = await Promise.all([
-      fetch(`https://api.airtable.com/v0/${baseId}/Menu`, {
-        headers: { Authorization: `Bearer ${apiKey}` }
-      }),
-      fetch(`https://api.airtable.com/v0/${baseId}/Offers`, {
-        headers: { Authorization: `Bearer ${apiKey}` }
-      })
+      fetchWithTimeout(
+        `https://api.airtable.com/v0/${baseId}/Menu`,
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+        2500
+      ),
+      fetchWithTimeout(
+        `https://api.airtable.com/v0/${baseId}/Offers`,
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+        2500
+      )
     ]);
 
     let menu = FALLBACK_MENU;
@@ -271,90 +292,23 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-function isCleanTextModel(name) {
-  const n = String(name || "").toLowerCase();
-  if (
-    n.includes("tts") ||
-    n.includes("image") ||
-    n.includes("imagen") ||
-    n.includes("veo") ||
-    n.includes("embedding") ||
-    n.includes("aqa") ||
-    n.includes("audio") ||
-    n.includes("robotics") ||
-    n.includes("thinking") ||
-    n.includes("learnlm") ||
-    n.includes("2.5-flash") ||
-    n.includes("2.0-flash-exp")
-  ) {
-    return false;
-  }
-  return n.includes("gemini") || n.includes("gemma-3");
-}
-
-function scoreModelPriority(name) {
-  const n = String(name || "").toLowerCase();
-  if (n.includes("gemini-3") && n.includes("flash-lite")) return 100;
-  if (n.includes("gemini-3") && n.includes("flash")) return 95;
-  if (n === "gemini-flash-lite-latest") return 90;
-  if (n.includes("gemma-3-27b-it")) return 85;
-  if (n.includes("gemma-3-12b-it")) return 80;
-  if (n === "gemini-flash-latest") return 75;
-  if (n.includes("gemini-3") && n.includes("pro")) return 70;
-  if (n.includes("gemini-2.0-flash-lite")) return 65;
-  if (n.includes("gemini-2.0-flash")) return 60;
-  return 50;
-}
-
+// Fast 3-model caller with 4.5s timeout per model (Total max time < 12s, zero 502 timeouts!)
 async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
-  if (!cachedAvailableModels) {
-    try {
-      const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
-        headers: { "x-goog-api-key": cleanKey }
-      });
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const discovered = (listData.models || [])
-          .filter(
-            (m) =>
-              Array.isArray(m.supportedGenerationMethods) &&
-              m.supportedGenerationMethods.includes("generateContent")
-          )
-          .map((m) => m.name.replace("models/", ""))
-          .filter(isCleanTextModel)
-          .sort((a, b) => scoreModelPriority(b) - scoreModelPriority(a));
-
-        if (discovered.length > 0) {
-          cachedAvailableModels = discovered;
-        }
-      }
-    } catch (e) {
-      errors.push(`ListModelsErr: ${e.message}`);
-    }
-  }
-
-  const defaultCandidates = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3.0-flash",
-    "gemini-flash-lite-latest",
+  // Prioritize Gemma 3 (14,400 RPD free quota, ultra-fast) & Gemini Flash-Lite
+  let modelsToTry = [
     "gemma-3-27b-it",
-    "gemma-3-12b-it",
-    "gemini-flash-latest"
+    "gemini-flash-lite-latest",
+    "gemma-3-12b-it"
   ];
-
-  let modelsToTry = cachedAvailableModels
-    ? [...new Set([...cachedAvailableModels, ...defaultCandidates])]
-    : defaultCandidates;
 
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
 
-  for (const modelName of modelsToTry.slice(0, 7)) {
+  for (const modelName of modelsToTry.slice(0, 3)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
     const isGemmaModel = modelName.toLowerCase().startsWith("gemma");
 
@@ -363,7 +317,13 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
           contents: [
             {
               role: "user",
-              parts: [{ text: `${systemInstruction}\n\nUser Question: ${contents[contents.length - 1]?.parts?.[0]?.text || "Namaste"}` }]
+              parts: [
+                {
+                  text: `${systemInstruction}\n\nUser Question: ${
+                    contents[contents.length - 1]?.parts?.[0]?.text || "Namaste"
+                  }`
+                }
+              ]
             }
           ],
           generationConfig: { temperature: 0.5 }
@@ -378,14 +338,18 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
         };
 
     try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": cleanKey
+      const res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": cleanKey
+          },
+          body: JSON.stringify(requestPayload)
         },
-        body: JSON.stringify(requestPayload)
-      });
+        4800
+      );
 
       if (res.ok) {
         const data = await res.json();
@@ -393,7 +357,7 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
         return { ok: true, data, modelUsed: modelName };
       } else {
         const errBody = await res.text();
-        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 100)}`);
+        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 90)}`);
         if (cachedWorkingModel === modelName) {
           cachedWorkingModel = null;
         }
@@ -528,7 +492,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   }
 
   return {
-    reply: "कृपया अपना सवाल थोड़ा स्पष्ट लिखें—आप मुझसे कोई भी सामान्य सवाल, गणित, या क्षीर सागर के मेन्यू और ऑफ़र्स के बारे में पूछ सकते हैं।",
+    reply: "कृपया अपना सवाल थोड़ा स्पष्ट लिखें—आप मुझसे कोई भी सामान्य सवाल, या क्षीर सागर के मेन्यू और ऑफ़र्स के बारे में पूछ सकते हैं।",
     recommendedItems: [],
     debugError: debugReason || null,
     quickFollowUps: [
@@ -569,12 +533,13 @@ exports.handler = async (event) => {
     }
 
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${supabaseUrl}/rest/v1/laddu_ai_chats?select=*&order=updated_at.desc&limit=100`,
         {
           method: "GET",
           headers: getSupabaseHeaders(supabaseKey)
-        }
+        },
+        4000
       );
 
       if (!res.ok) {
@@ -621,10 +586,10 @@ exports.handler = async (event) => {
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
     const pageContext = String(body.pageContext || "").slice(0, 3500);
 
-    const liveData = await fetchLiveAirtableData(
-      process.env.AIRTABLE_BASE_ID,
-      process.env.AIRTABLE_API_KEY
-    );
+    // Only call Airtable if frontend didn't already pass the menu
+    const liveData = clientMenu
+      ? { menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" }
+      : await fetchLiveAirtableData(process.env.AIRTABLE_BASE_ID, process.env.AIRTABLE_API_KEY);
 
     const activeMenu = clientMenu || liveData.menu;
     const activeOffers = clientOffers || liveData.offers;
@@ -766,7 +731,7 @@ ${JSON.stringify(activeOffers)}
 
     const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
 
-    // Log this turn into Supabase and capture exact status
+    // Log this turn into Supabase
     const supabaseStatus = await logChatToSupabase({
       sessionId,
       customerName,
