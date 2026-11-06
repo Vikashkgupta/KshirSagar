@@ -8,69 +8,119 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', system-ui, sans-serif; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
-<body class="bg-neutral-100 text-neutral-900 h-screen flex flex-col overflow-hidden">
+<body class="bg-neutral-100 text-neutral-900 h-[100dvh] flex flex-col overflow-hidden">
 
-  <!-- Top Header -->
-  <header class="bg-white border-b border-neutral-200 px-5 py-3.5 flex items-center justify-between flex-none">
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-sm">L</div>
-      <div>
-        <h1 class="font-bold text-base text-neutral-900 leading-tight">Laddu AI — Live Chat Monitor</h1>
-        <p class="text-xs text-neutral-500">User-wise separated chat transcripts powered by Supabase</p>
+  <!-- Top Header (Shown on Desktop always; on Mobile/Tablet shown when on the User List view) -->
+  <header id="topPageHeader" class="bg-white border-b border-neutral-200 px-4 sm:px-5 py-3 flex items-center justify-between flex-none">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="w-9 h-9 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">🤖</div>
+      <div class="min-w-0">
+        <h1 class="font-bold text-sm sm:text-base text-neutral-900 leading-tight truncate">Laddu AI — Chats</h1>
+        <p class="text-[11px] text-neutral-500 truncate">KshirSagar Assistance</p>
       </div>
     </div>
-    <div class="flex items-center gap-2">
-      <a href="/admin.html" class="px-3.5 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-700 transition-colors">
-        ← Orders Admin
+    <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+      <a href="/admin.html" class="px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-700 transition-colors whitespace-nowrap">
+        ← Orders
       </a>
-      <button id="btnRefresh" class="px-4 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-colors">
-        ↻ Refresh Chats
+      <button id="btnRefresh" type="button" class="px-3.5 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-colors whitespace-nowrap">
+        ↻ Refresh
       </button>
     </div>
   </header>
 
-  <!-- Main Split View (WhatsApp Web Style: Left User List, Right Full Transcript) -->
-  <div class="flex-1 flex overflow-hidden">
-    <!-- Left Sidebar: User Sessions List -->
-    <aside class="w-full md:w-80 lg:w-96 bg-white border-r border-neutral-200 flex flex-col">
-      <div class="p-3 border-b border-neutral-100">
-        <input id="searchInput" type="text" placeholder="Search by Visitor ID, Name, Phone or Message..." class="w-full bg-neutral-100 rounded-full px-4 py-2 text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none" />
+  <!-- Main Responsive Container:
+       - On Mobile/Tablet (< lg): Single-pane WhatsApp navigation (List View -> Tap -> Full-Screen Chat View -> Back -> List View)
+       - On Desktop (lg+): Side-by-side Split View -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- LEFT PANE: User Sessions List -->
+    <aside id="sidebarPane" class="w-full lg:w-96 bg-white lg:border-r border-neutral-200 flex flex-col h-full">
+      <div class="p-3 border-b border-neutral-100 flex items-center gap-2">
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Search by Visitor ID, Name, Phone or Message..."
+          class="w-full bg-neutral-100 rounded-full px-4 py-2 text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none"
+        />
       </div>
       <div id="sessionList" class="flex-1 overflow-y-auto divide-y divide-neutral-100">
         <div class="p-6 text-center text-xs text-neutral-400">Loading chat sessions...</div>
       </div>
     </aside>
 
-    <!-- Right Panel: Selected User's Full Chat History -->
-    <main class="hidden md:flex flex-1 flex-col bg-neutral-50">
-      <div id="chatHeader" class="bg-white border-b border-neutral-200 px-6 py-3.5 flex items-center justify-between">
-        <div>
-          <h2 id="activeUserTitle" class="font-semibold text-sm text-neutral-900">Select a user from the left list</h2>
-          <p id="activeUserMeta" class="text-xs text-neutral-400">Full conversation history will appear here</p>
+    <!-- RIGHT PANE: Full Chat Transcript (Hidden on mobile/tablet until a chat is tapped; always visible on lg+ desktop) -->
+    <main id="chatPane" class="hidden lg:flex flex-1 flex-col bg-neutral-50 h-full w-full">
+      <!-- Chat Header with Mobile/Tablet Back Button -->
+      <div id="chatHeader" class="bg-white border-b border-neutral-200 px-3 sm:px-5 py-3 flex items-center justify-between flex-none">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <!-- Back Button (Visible on Mobile & Tablet < lg) -->
+          <button
+            id="btnBackToList"
+            type="button"
+            class="lg:hidden w-9 h-9 rounded-full flex items-center justify-center text-neutral-800 hover:bg-neutral-100 active:bg-neutral-200 transition-colors flex-shrink-0"
+            title="Back to chat list"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div class="w-9 h-9 rounded-full bg-neutral-200 text-neutral-800 flex items-center justify-center font-bold text-xs flex-shrink-0">
+            👤
+          </div>
+
+          <div class="min-w-0">
+            <h2 id="activeUserTitle" class="font-semibold text-sm text-neutral-900 truncate">Select a user from the list</h2>
+            <p id="activeUserMeta" class="text-[11px] text-neutral-500 truncate">Tap any conversation to read messages</p>
+          </div>
         </div>
+
+        <button
+          id="btnRefreshInChat"
+          type="button"
+          class="lg:hidden px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold flex-shrink-0"
+        >
+          ↻
+        </button>
       </div>
 
-      <div id="transcriptContainer" class="flex-1 overflow-y-auto p-6 space-y-4 max-w-3xl w-full mx-auto">
+      <!-- Messages Transcript Feed -->
+      <div id="transcriptContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-3xl w-full mx-auto">
         <div class="text-center text-xs text-neutral-400 py-20">
-          बाईं तरफ़ किसी भी यूज़र पर क्लिक करके उसकी पूरी बातचीत देखें।
+          किसी भी यूज़र पर टैप करके उसकी पूरी बातचीत देखें।
         </div>
       </div>
     </main>
+
   </div>
 
   <script>
     (function() {
       let allSessions = [];
       let selectedSessionId = null;
+      let isMobileChatOpen = false;
+      let ignoreNextPopState = false;
 
+      const topPageHeader = document.getElementById('topPageHeader');
+      const sidebarPane = document.getElementById('sidebarPane');
+      const chatPane = document.getElementById('chatPane');
       const sessionListEl = document.getElementById('sessionList');
       const transcriptEl = document.getElementById('transcriptContainer');
       const activeUserTitle = document.getElementById('activeUserTitle');
       const activeUserMeta = document.getElementById('activeUserMeta');
       const searchInput = document.getElementById('searchInput');
       const btnRefresh = document.getElementById('btnRefresh');
+      const btnRefreshInChat = document.getElementById('btnRefreshInChat');
+      const btnBackToList = document.getElementById('btnBackToList');
+
+      function isDesktopScreen() {
+        return window.innerWidth >= 1024; // Tailwind `lg` breakpoint
+      }
 
       function formatTime(iso) {
         if (!iso) return '';
@@ -83,6 +133,88 @@
         }
       }
 
+      function formatMessageHtml(text) {
+        return String(text || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+          .replace(/`(.*?)`/g, '<code class="bg-neutral-100 text-neutral-800 px-1 py-0.5 rounded text-[11px] font-mono">$1</code>')
+          .replace(/\n/g, '<br/>');
+      }
+
+      // Switches between User List view and Full-Screen Chat view on Mobile & Tablet (< 1024px)
+      function openChatView(session, pushHistory = true) {
+        selectedSessionId = session.session_id;
+        renderSessionList();
+        renderTranscript(session);
+
+        if (!isDesktopScreen()) {
+          if (!isMobileChatOpen && pushHistory) {
+            try {
+              window.history.pushState({ ladduAdminChatOpen: session.session_id }, '');
+            } catch (e) {}
+          }
+          isMobileChatOpen = true;
+          sidebarPane.classList.add('hidden');
+          topPageHeader.classList.add('hidden');
+          chatPane.classList.remove('hidden');
+          chatPane.classList.add('flex');
+        }
+      }
+
+      function closeMobileChatView(fromPopState = false) {
+        if (!isMobileChatOpen) return;
+        isMobileChatOpen = false;
+
+        chatPane.classList.add('hidden');
+        chatPane.classList.remove('flex');
+        sidebarPane.classList.remove('hidden');
+        topPageHeader.classList.remove('hidden');
+
+        if (!fromPopState) {
+          ignoreNextPopState = true;
+          try {
+            window.history.back();
+          } catch (e) {
+            ignoreNextPopState = false;
+          }
+        }
+      }
+
+      // Handle physical Android Back button / gesture & Browser Back button
+      window.addEventListener('popstate', function() {
+        if (ignoreNextPopState) {
+          ignoreNextPopState = false;
+          return;
+        }
+        if (isMobileChatOpen) {
+          closeMobileChatView(true);
+        }
+      });
+
+      // Keep layout responsive if device rotates or window resizes
+      window.addEventListener('resize', function() {
+        if (isDesktopScreen()) {
+          sidebarPane.classList.remove('hidden');
+          topPageHeader.classList.remove('hidden');
+          chatPane.classList.remove('hidden');
+          chatPane.classList.add(' lg:flex');
+        } else {
+          if (isMobileChatOpen) {
+            sidebarPane.classList.add('hidden');
+            topPageHeader.classList.add('hidden');
+            chatPane.classList.remove('hidden');
+            chatPane.classList.add('flex');
+          } else {
+            chatPane.classList.add('hidden');
+            chatPane.classList.remove('flex');
+            sidebarPane.classList.remove('hidden');
+            topPageHeader.classList.remove('hidden');
+          }
+        }
+      });
+
       async function loadSessions() {
         btnRefresh.innerText = 'Loading...';
         try {
@@ -90,10 +222,12 @@
           const data = await res.json();
           allSessions = Array.isArray(data.sessions) ? data.sessions : [];
           renderSessionList();
+
           if (selectedSessionId) {
             const found = allSessions.find(s => s.session_id === selectedSessionId);
             if (found) renderTranscript(found);
-          } else if (allSessions.length > 0) {
+          } else if (allSessions.length > 0 && isDesktopScreen()) {
+            // Auto-select first chat ONLY on large desktop screens so mobile starts on the WhatsApp list view
             selectedSessionId = allSessions[0].session_id;
             renderSessionList();
             renderTranscript(allSessions[0]);
@@ -101,7 +235,7 @@
         } catch (err) {
           sessionListEl.innerHTML = '<div class="p-6 text-center text-xs text-red-500">Failed to load sessions. Deploy to Netlify or run npx netlify dev.</div>';
         } finally {
-          btnRefresh.innerText = '↻ Refresh Chats';
+          btnRefresh.innerText = '↻ Refresh';
         }
       }
 
@@ -127,30 +261,33 @@
           const isSelected = session.session_id === selectedSessionId;
           const item = document.createElement('button');
           item.type = 'button';
-          item.className = 'w-full text-left p-4 hover:bg-neutral-50 transition-colors flex flex-col gap-1 ' + (isSelected ? 'bg-neutral-100' : '');
+          item.className = 'w-full text-left p-4 hover:bg-neutral-50 active:bg-neutral-100 transition-colors flex items-center justify-between gap-3 ' + (isSelected && isDesktopScreen() ? 'bg-neutral-100' : '');
 
           const displayName = session.customer_name && session.customer_name !== 'Guest User'
             ? `${session.customer_name} (${session.session_id})`
             : `Visitor ${session.session_id}`;
 
           item.innerHTML = `
-            <div class="flex items-center justify-between">
-              <span class="font-semibold text-xs text-neutral-900 truncate">${displayName}</span>
-              <span class="text-[10px] text-neutral-400">${formatTime(session.updated_at)}</span>
+            <div class="min-w-0 flex-1 space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold text-xs sm:text-sm text-neutral-900 truncate">${displayName}</span>
+                <span class="text-[10px] text-neutral-400 flex-shrink-0">${formatTime(session.updated_at)}</span>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-xs text-neutral-600">
+                <span class="truncate pr-2">${String(session.last_user_message || '').replace(/</g, '&lt;')}</span>
+                <span class="px-2 py-0.5 rounded-full bg-neutral-200 text-neutral-800 text-[10px] font-semibold flex-shrink-0">${session.message_count || 1} msgs</span>
+              </div>
+              <div class="text-[10px] text-neutral-400 truncate">
+                ${session.customer_mobile ? '📞 ' + session.customer_mobile + ' • ' : ''}📱 ${session.device_info || 'Web'}
+              </div>
             </div>
-            <div class="flex items-center justify-between text-[11px] text-neutral-500">
-              <span class="truncate pr-2">${session.last_user_message || ''}</span>
-              <span class="px-2 py-0.5 rounded-full bg-neutral-200 text-neutral-800 text-[10px] font-semibold flex-shrink-0">${session.message_count || 1} msgs</span>
-            </div>
-            <div class="text-[10px] text-neutral-400 truncate">
-              ${session.customer_mobile ? '📞 ' + session.customer_mobile + ' • ' : ''}📱 ${session.device_info || 'Web'}
-            </div>
+            <svg class="w-4 h-4 text-neutral-400 flex-shrink-0 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
           `;
 
           item.addEventListener('click', () => {
-            selectedSessionId = session.session_id;
-            renderSessionList();
-            renderTranscript(session);
+            openChatView(session, true);
           });
 
           sessionListEl.appendChild(item);
@@ -178,8 +315,8 @@
           row.className = 'flex flex-col ' + (isUser ? 'items-end' : 'items-start');
 
           row.innerHTML = `
-            <div class="max-w-[82%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${isUser ? 'bg-neutral-900 text-white' : 'bg-white border border-neutral-200 text-neutral-900'}">
-              <div class="whitespace-pre-wrap">${String(msg.text || '').replace(/</g, '&lt;')}</div>
+            <div class="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed break-words ${isUser ? 'bg-neutral-900 text-white rounded-br-sm' : 'bg-white border border-neutral-200 text-neutral-900 rounded-bl-sm shadow-xs'}">
+              <div>${formatMessageHtml(msg.text)}</div>
             </div>
             <span class="text-[10px] text-neutral-400 mt-1 px-1">${isUser ? 'User' : 'Laddu AI'} • ${formatTime(msg.timestamp)}</span>
           `;
@@ -189,8 +326,13 @@
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
       }
 
+      btnBackToList.addEventListener('click', function() {
+        closeMobileChatView(false);
+      });
+
       searchInput.addEventListener('input', renderSessionList);
       btnRefresh.addEventListener('click', loadSessions);
+      btnRefreshInChat.addEventListener('click', loadSessions);
 
       loadSessions();
     })();

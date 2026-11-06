@@ -11,7 +11,7 @@ import { useModalBack } from '../../hooks/useModalBack';
 // ============================================================================
 // 👉 APNA CUTE LADDU AI PNG LOGO LINK YAHAN DAALEIN:
 // ============================================================================
-const LADDU_AI_LOGO = '/logo.png';
+const LADDU_AI_LOGO = '/laddu.png';
 
 const LIVE_NETLIFY_BASE = 'https://kshirsagarsweets.netlify.app';
 
@@ -21,7 +21,7 @@ const STORE_PROFILE = {
   established: 'Since 1998 — Tradition of Excellence',
   tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya)',
   timings: 'सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)',
-  address: 'Nai Bazar, Mairwa (Siwan), Bihar — Near Power House, Mairwa Dham',
+  address: 'Nai Bazar, Mairwa (Siwan), Bihar',
   phone: '+91 8226935738',
   whatsapp: '+91 8226935738',
   website: 'https://kshirsagarsweets.netlify.app/'
@@ -36,7 +36,7 @@ const QUICK_PROMPTS = [
 ];
 
 const INITIAL_WELCOME =
-  'नमस्ते! 👋 KshirSagar में आपका स्वागत है।\n\n' +
+  'Hi 👋 KshirSagar में आपका स्वागत है।\n\n' +
   'मैं हूँ Laddu AI! बताइए, आज आपकी क्या मदद करूँ? 😊';
 
 // Generates or retrieves a persistent Visitor Session ID (e.g., "KS-8492-A1B2") in localStorage
