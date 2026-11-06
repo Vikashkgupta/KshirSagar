@@ -11,7 +11,7 @@ import { useModalBack } from '../../hooks/useModalBack';
 // ============================================================================
 // 👉 APNA CUTE LADDU AI PNG LOGO LINK YAHAN DAALEIN:
 // ============================================================================
-const LADDU_AI_LOGO = '/laddu.png';
+const LADDU_AI_LOGO = '/logo.png';
 
 const LIVE_NETLIFY_BASE = 'https://kshirsagarsweets.netlify.app';
 
@@ -21,7 +21,7 @@ const STORE_PROFILE = {
   established: 'Since 1998 — Tradition of Excellence',
   tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya)',
   timings: 'सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)',
-  address: 'Nai Bazar, Mairwa (Siwan), Bihar',
+  address: 'Nai Bazar, Mairwa (Siwan), Bihar — Near Power House, Mairwa Dham',
   phone: '+91 8226935738',
   whatsapp: '+91 8226935738',
   website: 'https://kshirsagarsweets.netlify.app/'
@@ -32,12 +32,12 @@ const QUICK_PROMPTS = [
   '🍕 ₹500 के बजट में पार्टी कॉम्बो सजेस्ट करो',
   '🏷️ आज के स्पेशल ऑफ़र्स क्या हैं?',
   '📍 दुकान कब खुलती है और कहाँ है?',
-  '🧮 कोई भी सवाल या कैलकुलेशन पूछो'
+  '✨ कुछ नया और रोचक बताओ'
 ];
 
 const INITIAL_WELCOME =
-  'नमस्ते! 👋 KshirSagar में आपका स्वागत है। \n\n' +
-  'मैं हूँ Laddu AI! बताइए, आज आपकी क्या मदद करूँ? 😊';
+  'नमस्ते! मैं **Laddu AI** हूँ।\n\n' +
+  'क्षीर सागर की मिठाइयों और ऑफ़र्स से लेकर आपके रोज़मर्रा के किसी भी सवाल या काम तक—बेझिझक कुछ भी पूछें!';
 
 // Generates or retrieves a persistent Visitor Session ID (e.g., "KS-8492-A1B2") in localStorage
 function getOrCreateVisitorSessionId() {
@@ -447,6 +447,9 @@ const AIMitrModal = () => {
       if (data && data.reply) {
         if (data.debugError) {
           console.warn('[Laddu AI Backend Diagnostic]:', data.debugError);
+        }
+        if (data.supabaseStatus && !data.supabaseStatus.logged) {
+          console.warn('[Laddu AI Supabase Log Notice]:', data.supabaseStatus.reason);
         }
 
         setMessages((prev) => [

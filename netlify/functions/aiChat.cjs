@@ -1,9 +1,9 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers + Automatic Supabase Session Logging
-// Features:
-// 1. Answers general world questions (Math, GK, Coding) & live KshirSagar Menu/Offers queries.
-// 2. Automatically logs & groups every user's conversation by `sessionId` into Supabase (`laddu_ai_chats`).
-// 3. Supports `GET /.netlify/functions/aiChat` to fetch all logged user sessions for the Admin Monitor.
+// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers + Guaranteed Supabase Session Logging
+// Includes:
+// 1. Both `apikey` AND `Authorization: Bearer` headers (required by Supabase API gateway for `sb_publishable_` and `eyJ` keys)
+// 2. Clean 2-step SELECT -> PATCH / POST upsert so it never fails on PostgREST Prefer header restrictions
+// 3. `supabaseStatus` diagnostic returned in every response so you can see exact database status in browser console
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -55,21 +55,36 @@ const FALLBACK_OFFERS = [
 let cachedWorkingModel = null;
 let cachedAvailableModels = null;
 
-// Helper to build Supabase headers supporting both `sb_publishable_...` keys and JWT `eyJ...` keys
+// Supabase requires BOTH `apikey` and `Authorization: Bearer <key>` when unauthenticated
 function getSupabaseHeaders(supabaseKey, extra = {}) {
   const clean = String(supabaseKey || "").trim();
-  const h = {
+  return {
     "Content-Type": "application/json",
     apikey: clean,
+    Authorization: `Bearer ${clean}`,
     ...extra
   };
-  if (clean.startsWith("eyJ")) {
-    h.Authorization = `Bearer ${clean}`;
-  }
-  return h;
 }
 
-// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`)
+function resolveSupabaseConfig() {
+  const rawUrl =
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    "https://frltketibbthwqydnhls.supabase.co";
+  const supabaseUrl = String(rawUrl).trim().replace(/\/$/, "");
+
+  const supabaseKey = String(
+    process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      ""
+  ).trim();
+
+  return { supabaseUrl, supabaseKey };
+}
+
+// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) and returns diagnostic status
 async function logChatToSupabase({
   sessionId,
   customerName,
@@ -78,39 +93,55 @@ async function logChatToSupabase({
   userMessage,
   aiReply
 }) {
-  const supabaseUrl = (process.env.SUPABASE_URL || "https://frltketibbthwqydnhls.supabase.co").replace(/\/$/, "");
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+  const { supabaseUrl, supabaseKey } = resolveSupabaseConfig();
 
-  if (!supabaseUrl || !supabaseKey || !sessionId || !userMessage) return;
+  if (!supabaseKey) {
+    return {
+      logged: false,
+      reason: "SUPABASE_ANON_KEY missing in Netlify Environment Variables (or site not redeployed after adding it)."
+    };
+  }
+
+  if (!sessionId || !userMessage) {
+    return { logged: false, reason: "Missing sessionId or userMessage" };
+  }
 
   try {
     const nowIso = new Date().toISOString();
-    const getUrl = `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}&select=conversation,message_count,customer_name,customer_mobile`;
+    const getUrl = `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}&select=session_id,conversation,message_count,customer_name,customer_mobile`;
 
     const existingRes = await fetch(getUrl, {
       method: "GET",
       headers: getSupabaseHeaders(supabaseKey)
     });
 
+    if (!existingRes.ok) {
+      const errTxt = await existingRes.text();
+      return {
+        logged: false,
+        reason: `Supabase GET failed (${existingRes.status}): ${errTxt.slice(0, 160)}`
+      };
+    }
+
+    const rows = await existingRes.json();
+    const rowExists = Array.isArray(rows) && rows.length > 0;
+
     let existingConversation = [];
     let prevCount = 0;
     let savedName = customerName || "Guest User";
     let savedMobile = customerMobile || "";
 
-    if (existingRes.ok) {
-      const rows = await existingRes.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        const row = rows[0];
-        if (Array.isArray(row.conversation)) {
-          existingConversation = row.conversation;
-        }
-        prevCount = Number(row.message_count || 0);
-        if ((!customerName || customerName === "Guest User") && row.customer_name) {
-          savedName = row.customer_name;
-        }
-        if (!customerMobile && row.customer_mobile) {
-          savedMobile = row.customer_mobile;
-        }
+    if (rowExists) {
+      const row = rows[0];
+      if (Array.isArray(row.conversation)) {
+        existingConversation = row.conversation;
+      }
+      prevCount = Number(row.message_count || 0);
+      if ((!customerName || customerName === "Guest User") && row.customer_name) {
+        savedName = row.customer_name;
+      }
+      if (!customerMobile && row.customer_mobile) {
+        savedMobile = row.customer_mobile;
       }
     }
 
@@ -120,27 +151,63 @@ async function logChatToSupabase({
       { role: "ai", text: aiReply, timestamp: nowIso }
     ];
 
-    const upsertPayload = {
-      session_id: sessionId,
-      customer_name: savedName,
-      customer_mobile: savedMobile,
-      device_info: deviceInfo || "Web Browser",
-      message_count: prevCount + 1,
-      last_user_message: userMessage,
-      last_ai_reply: aiReply,
-      conversation: updatedConversation,
-      updated_at: nowIso
-    };
+    if (rowExists) {
+      // Update existing session row via PATCH
+      const patchRes = await fetch(
+        `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}`,
+        {
+          method: "PATCH",
+          headers: getSupabaseHeaders(supabaseKey, { Prefer: "return=minimal" }),
+          body: JSON.stringify({
+            customer_name: savedName,
+            customer_mobile: savedMobile,
+            device_info: deviceInfo || "Web Browser",
+            message_count: prevCount + 1,
+            last_user_message: userMessage,
+            last_ai_reply: aiReply,
+            conversation: updatedConversation,
+            updated_at: nowIso
+          })
+        }
+      );
 
-    await fetch(`${supabaseUrl}/rest/v1/laddu_ai_chats`, {
-      method: "POST",
-      headers: getSupabaseHeaders(supabaseKey, {
-        Prefer: "resolution=merge-duplicates,return=minimal"
-      }),
-      body: JSON.stringify(upsertPayload)
-    });
+      if (!patchRes.ok) {
+        const patchErr = await patchRes.text();
+        return {
+          logged: false,
+          reason: `Supabase PATCH failed (${patchRes.status}): ${patchErr.slice(0, 160)}`
+        };
+      }
+      return { logged: true, action: "updated", sessionId, messageCount: prevCount + 1 };
+    } else {
+      // Insert new session row via POST
+      const postRes = await fetch(`${supabaseUrl}/rest/v1/laddu_ai_chats`, {
+        method: "POST",
+        headers: getSupabaseHeaders(supabaseKey, { Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          session_id: sessionId,
+          customer_name: savedName,
+          customer_mobile: savedMobile,
+          device_info: deviceInfo || "Web Browser",
+          message_count: 1,
+          last_user_message: userMessage,
+          last_ai_reply: aiReply,
+          conversation: updatedConversation,
+          updated_at: nowIso
+        })
+      });
+
+      if (!postRes.ok) {
+        const postErr = await postRes.text();
+        return {
+          logged: false,
+          reason: `Supabase INSERT failed (${postRes.status}): ${postErr.slice(0, 160)}`
+        };
+      }
+      return { logged: true, action: "inserted", sessionId, messageCount: 1 };
+    }
   } catch (err) {
-    console.warn("[Laddu AI Supabase Log Warning]:", err.message);
+    return { logged: false, reason: `Supabase exception: ${err.message}` };
   }
 }
 
@@ -487,14 +554,17 @@ exports.handler = async (event) => {
 
   // GET request: Returns all logged user chat sessions from Supabase for the Admin Chat Viewer
   if (event.httpMethod === "GET") {
-    const supabaseUrl = (process.env.SUPABASE_URL || "https://frltketibbthwqydnhls.supabase.co").replace(/\/$/, "");
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+    const { supabaseUrl, supabaseKey } = resolveSupabaseConfig();
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseKey) {
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: false, sessions: [], message: "SUPABASE_ANON_KEY not set" })
+        body: JSON.stringify({
+          success: false,
+          sessions: [],
+          message: "SUPABASE_ANON_KEY not set in Netlify Environment Variables (or site not redeployed)."
+        })
       };
     }
 
@@ -506,7 +576,21 @@ exports.handler = async (event) => {
           headers: getSupabaseHeaders(supabaseKey)
         }
       );
-      const sessions = res.ok ? await res.json() : [];
+
+      if (!res.ok) {
+        const errText = await res.text();
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: false,
+            sessions: [],
+            error: `Supabase GET ${res.status}: ${errText}`
+          })
+        };
+      }
+
+      const sessions = await res.json();
       return {
         statusCode: 200,
         headers,
@@ -528,7 +612,7 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || "{}");
     const userMessage = (body.message || "").trim();
-    const sessionId = String(body.sessionId || "guest-session").trim();
+    const sessionId = String(body.sessionId || "KS-GUEST").trim();
     const customerName = String(body.customerName || "Guest User").trim();
     const customerMobile = String(body.customerMobile || "").trim();
     const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 120);
@@ -557,7 +641,7 @@ exports.handler = async (event) => {
         activeOffers,
         "GEMINI_API_KEY not found in environment variables."
       );
-      await logChatToSupabase({
+      const supabaseStatus = await logChatToSupabase({
         sessionId,
         customerName,
         customerMobile,
@@ -572,6 +656,7 @@ exports.handler = async (event) => {
           success: true,
           mode: "missing_env_key",
           dataSource: liveData.source,
+          supabaseStatus,
           ...fallbackResult
         })
       };
@@ -643,7 +728,7 @@ ${JSON.stringify(activeOffers)}
         activeOffers,
         callResult.errorText
       );
-      await logChatToSupabase({
+      const supabaseStatus = await logChatToSupabase({
         sessionId,
         customerName,
         customerMobile,
@@ -658,6 +743,7 @@ ${JSON.stringify(activeOffers)}
           success: true,
           mode: "api_error_fallback",
           dataSource: liveData.source,
+          supabaseStatus,
           ...fallbackResult
         })
       };
@@ -680,8 +766,8 @@ ${JSON.stringify(activeOffers)}
 
     const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
 
-    // Log this turn into Supabase under the user's session_id
-    await logChatToSupabase({
+    // Log this turn into Supabase and capture exact status
+    const supabaseStatus = await logChatToSupabase({
       sessionId,
       customerName,
       customerMobile,
@@ -713,12 +799,13 @@ ${JSON.stringify(activeOffers)}
         mode: "laddu_ai_live",
         modelUsed: callResult.modelUsed,
         dataSource: liveData.source,
+        supabaseStatus,
         reply: finalReply,
         recommendedItems: matchedItems.slice(0, 4),
         quickFollowUps:
           Array.isArray(parsed.quickFollowUps) && parsed.quickFollowUps.length > 0
             ? parsed.quickFollowUps.slice(0, 4)
-            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "🧮 कोई भी सवाल पूछो"]
+            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "✨ कुछ नया और रोचक बताओ"]
       })
     };
   } catch (err) {
