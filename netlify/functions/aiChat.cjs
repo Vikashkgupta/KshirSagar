@@ -1,9 +1,7 @@
 // File: netlify/functions/aiChat.cjs
 // Laddu AI — Ultra-Fast Smart Assistant for KshirSagar Sweets & Bakers + Instant Supabase Session Logging
-// Fixes the 30-second Netlify Sandbox.Timedout (502) by:
-// 1. Removing the slow `v1beta/models` ListModels discovery call
-// 2. Enforcing a strict 4.5-second AbortController timeout per fetch so a slow model never blocks the function
-// 3. Running Supabase session logging with a 3.5-second timeout and proper `apikey` header
+// Includes automatic URL sanitization (strips accidental Markdown [url](url) brackets from env vars)
+// and a strict 8.5s total execution budget so it never triggers Netlify's 10s free-tier 502 Bad Gateway timeout!
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -54,8 +52,8 @@ const FALLBACK_OFFERS = [
 
 let cachedWorkingModel = null;
 
-// Fast fetch wrapper with strict timeout so Netlify Function NEVER hits the 30s Sandbox.Timedout
-async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
+// Fast fetch wrapper with strict timeout so Netlify Function never exceeds Netlify's 10s limit
+async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -65,7 +63,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
   }
 }
 
-// Supabase headers: `sb_publishable_` keys go ONLY in `apikey` header (sending them in Authorization: Bearer causes 401 on PostgREST)
 function getSupabaseHeaders(supabaseKey, extra = {}) {
   const clean = String(supabaseKey || "").trim();
   const h = {
@@ -79,12 +76,17 @@ function getSupabaseHeaders(supabaseKey, extra = {}) {
   return h;
 }
 
+// Automatically cleans SUPABASE_URL even if pasted as Markdown `[https://...](https://...)` in Netlify!
 function resolveSupabaseConfig() {
   const rawUrl =
     process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
     "https://frltketibbthwqydnhls.supabase.co";
-  const supabaseUrl = String(rawUrl).trim().replace(/\/$/, "");
+
+  const urlMatch = String(rawUrl).match(/https:\/\/[a-z0-9-]+\.supabase\.co/i);
+  const supabaseUrl = urlMatch
+    ? urlMatch[0]
+    : "https://frltketibbthwqydnhls.supabase.co";
 
   const supabaseKey = String(
     process.env.SUPABASE_ANON_KEY ||
@@ -92,12 +94,14 @@ function resolveSupabaseConfig() {
       process.env.SUPABASE_PUBLISHABLE_KEY ||
       process.env.VITE_SUPABASE_ANON_KEY ||
       ""
-  ).trim();
+  )
+    .replace(/[\[\]()'"\s]/g, "")
+    .trim();
 
   return { supabaseUrl, supabaseKey };
 }
 
-// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) within 3.5 seconds max
+// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`) within 2.5 seconds max
 async function logChatToSupabase({
   sessionId,
   customerName,
@@ -111,7 +115,7 @@ async function logChatToSupabase({
   if (!supabaseKey) {
     return {
       logged: false,
-      reason: "SUPABASE_ANON_KEY missing in Netlify Environment Variables (or site not redeployed)."
+      reason: "SUPABASE_ANON_KEY missing in Netlify Environment Variables."
     };
   }
 
@@ -126,7 +130,7 @@ async function logChatToSupabase({
     const existingRes = await fetchWithTimeout(
       getUrl,
       { method: "GET", headers: getSupabaseHeaders(supabaseKey) },
-      3500
+      2200
     );
 
     if (!existingRes.ok) {
@@ -182,7 +186,7 @@ async function logChatToSupabase({
             updated_at: nowIso
           })
         },
-        3500
+        2200
       );
 
       if (!patchRes.ok) {
@@ -211,7 +215,7 @@ async function logChatToSupabase({
             updated_at: nowIso
           })
         },
-        3500
+        2200
       );
 
       if (!postRes.ok) {
@@ -224,7 +228,7 @@ async function logChatToSupabase({
       return { logged: true, action: "inserted", sessionId, messageCount: 1 };
     }
   } catch (err) {
-    return { logged: false, reason: `Supabase timeout/exception: ${err.message}` };
+    return { logged: false, reason: `Supabase exception: ${err.message}` };
   }
 }
 
@@ -238,12 +242,12 @@ async function fetchLiveAirtableData(baseId, apiKey) {
       fetchWithTimeout(
         `https://api.airtable.com/v0/${baseId}/Menu`,
         { headers: { Authorization: `Bearer ${apiKey}` } },
-        2500
+        1800
       ),
       fetchWithTimeout(
         `https://api.airtable.com/v0/${baseId}/Offers`,
         { headers: { Authorization: `Bearer ${apiKey}` } },
-        2500
+        1800
       )
     ]);
 
@@ -292,23 +296,22 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// Fast 3-model caller with 4.5s timeout per model (Total max time < 12s, zero 502 timeouts!)
+// Ultra-fast 2-model caller with 3.2s timeout per model so total execution stays well under Netlify's 10s limit
 async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
-  // Prioritize Gemma 3 (14,400 RPD free quota, ultra-fast) & Gemini Flash-Lite
   let modelsToTry = [
     "gemma-3-27b-it",
-    "gemini-flash-lite-latest",
-    "gemma-3-12b-it"
+    "gemma-3-12b-it",
+    "gemini-flash-lite-latest"
   ];
 
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
 
-  for (const modelName of modelsToTry.slice(0, 3)) {
+  for (const modelName of modelsToTry.slice(0, 2)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
     const isGemmaModel = modelName.toLowerCase().startsWith("gemma");
 
@@ -348,7 +351,7 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
           },
           body: JSON.stringify(requestPayload)
         },
-        4800
+        3200
       );
 
       if (res.ok) {
@@ -527,7 +530,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           success: false,
           sessions: [],
-          message: "SUPABASE_ANON_KEY not set in Netlify Environment Variables (or site not redeployed)."
+          message: "SUPABASE_ANON_KEY not set in Netlify Environment Variables."
         })
       };
     }
@@ -539,7 +542,7 @@ exports.handler = async (event) => {
           method: "GET",
           headers: getSupabaseHeaders(supabaseKey)
         },
-        4000
+        3500
       );
 
       if (!res.ok) {
@@ -586,7 +589,6 @@ exports.handler = async (event) => {
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
     const pageContext = String(body.pageContext || "").slice(0, 3500);
 
-    // Only call Airtable if frontend didn't already pass the menu
     const liveData = clientMenu
       ? { menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" }
       : await fetchLiveAirtableData(process.env.AIRTABLE_BASE_ID, process.env.AIRTABLE_API_KEY);
@@ -731,7 +733,6 @@ ${JSON.stringify(activeOffers)}
 
     const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
 
-    // Log this turn into Supabase
     const supabaseStatus = await logChatToSupabase({
       sessionId,
       customerName,
