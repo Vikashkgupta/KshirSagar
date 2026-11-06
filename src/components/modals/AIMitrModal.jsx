@@ -1,11 +1,5 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — Ultra-Clean Monochrome (White, Black & Neutral Grays) Full-Page AI Interface
-// Features:
-// - Pure White & Black/Gray palette (no brown/orange/gold borders or outlines)
-// - Borderless, outline-free suggestion chips & borderless input bar
-// - Removed '+' button from input bar
-// - Dedicated Send button on the right (disabled/inactive when input is empty or loading, active black when text is entered)
-// - Clean circular logo container for square PNG logo
+// Laddu AI — Ultra-Clean Monochrome Full-Page AI Interface + Unique Visitor Session Tracking + Direct URL Support (`?ai=1` or `#ai`)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -27,7 +21,7 @@ const STORE_PROFILE = {
   established: 'Since 1998 — Tradition of Excellence',
   tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya)',
   timings: 'सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)',
-  address: 'Nai Bazar, Mairwa (Siwan), Bihar — Near Power House, Mairwa Dham',
+  address: 'Nai Bazar, Mairwa (Siwan), Bihar',
   phone: '+91 8226935738',
   whatsapp: '+91 8226935738',
   website: 'https://kshirsagarsweets.netlify.app/'
@@ -42,8 +36,55 @@ const QUICK_PROMPTS = [
 ];
 
 const INITIAL_WELCOME =
-  'नमस्ते! मैं **Laddu AI** हूँ।\n\n' +
-  'आप मुझसे कोई भी सवाल पूछ सकते हैं—चाहे गणित, कोडिंग और सामान्य ज्ञान हो, या क्षीर सागर का मेन्यू, रेट्स और ऑफ़र्स।';
+  'नमस्ते! 👋 KshirSagar में आपका स्वागत है। \n\n' +
+  'मैं हूँ Laddu AI! बताइए, आज आपकी क्या मदद करूँ? 😊';
+
+// Generates or retrieves a persistent Visitor Session ID (e.g., "KS-8492-A1B2") in localStorage
+function getOrCreateVisitorSessionId() {
+  try {
+    const key = 'kshirsagar_laddu_session_id';
+    let existing = localStorage.getItem(key);
+    if (!existing) {
+      const randNum = Math.floor(1000 + Math.random() * 9000);
+      const randHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+      existing = `KS-${randNum}-${randHex}`;
+      localStorage.setItem(key, existing);
+    }
+    return existing;
+  } catch {
+    return 'KS-GUEST';
+  }
+}
+
+// Detects if the user already typed their name/mobile in the Cart form so we can attach it to their chat log
+function getKnownCustomerIdentity() {
+  try {
+    const nameEl = document.getElementById('cart-name');
+    const mobileEl = document.getElementById('cart-mobile');
+    const name = (nameEl?.value || localStorage.getItem('ks_customer_name') || '').trim();
+    const mobile = (mobileEl?.value || localStorage.getItem('ks_customer_mobile') || '').trim();
+    if (name) localStorage.setItem('ks_customer_name', name);
+    if (mobile) localStorage.setItem('ks_customer_mobile', mobile);
+    return {
+      customerName: name || 'Guest User',
+      customerMobile: mobile || ''
+    };
+  } catch {
+    return { customerName: 'Guest User', customerMobile: '' };
+  }
+}
+
+function getShortDeviceLabel() {
+  try {
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const platform = isAndroid ? 'Android' : isIOS ? 'iPhone' : 'Desktop';
+    return `${platform} (${window.innerWidth}x${window.innerHeight})`;
+  } catch {
+    return 'Web Browser';
+  }
+}
 
 const AIMitrModal = () => {
   const dispatch = useDispatch();
@@ -53,6 +94,7 @@ const AIMitrModal = () => {
   const [isOpen, setIsOpen] = useState(false);
   useModalBack(isOpen, () => setIsOpen(false), 'ai-mitr-modal');
 
+  const [sessionId] = useState(() => getOrCreateVisitorSessionId());
   const [messages, setMessages] = useState([
     {
       id: 'welcome-1',
@@ -79,6 +121,14 @@ const AIMitrModal = () => {
     window.toggleKshirSagarAI = () => setIsOpen((prev) => !prev);
     window.openKshirSagarAI = () => setIsOpen(true);
     window.closeKshirSagarAI = () => setIsOpen(false);
+
+    // Direct shareable URL support: https://kshirsagarsweets.netlify.app/?ai=1 or #ai or /ai
+    const search = window.location.search.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+    if (search.includes('ai=1') || search.includes('laddu') || hash.includes('ai') || path === '/ai') {
+      setIsOpen(true);
+    }
   }, []);
 
   const showToast = (text) => {
@@ -215,7 +265,6 @@ const AIMitrModal = () => {
     ];
   };
 
-  // Formats offers safely without ever showing "undefined"
   const formatOffersReply = (offersList) => {
     if (!Array.isArray(offersList) || offersList.length === 0) {
       return '🎉 **क्षीर सागर स्पेशल ऑफ़र्स:**\n\n• **Festival Sweet Deal:** ₹500 से ऊपर के ऑर्डर पर विशेष छूट\n• **Party Combo Offer:** पिज़्ज़ा, केक और स्नैक्स पर डायरेक्ट होम डिलीवरी सुविधा';
@@ -226,8 +275,8 @@ const AIMitrModal = () => {
       const code = o.code || o.Code || o.PromoCode || '';
       const discount = o.discount || o.Discount || o.description || o.Description || '';
       let line = `• **${title}**`;
-      if (code) line += ` — कोड: \`${code}\``;
-      if (discount) line += ` (${discount})`;
+      if (code && code !== 'undefined') line += ` — कोड: \`${code}\``;
+      if (discount && discount !== 'undefined') line += ` (${discount})`;
       return line;
     });
 
@@ -371,6 +420,7 @@ const AIMitrModal = () => {
     setIsLoading(true);
 
     const activeMenu = getNormalizedClientMenu();
+    const { customerName, customerMobile } = getKnownCustomerIdentity();
 
     try {
       const historyPayload = messages.slice(-8).map((m) => ({
@@ -382,6 +432,10 @@ const AIMitrModal = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          sessionId,
+          customerName,
+          customerMobile,
+          deviceInfo: getShortDeviceLabel(),
           message: trimmed,
           history: historyPayload,
           clientMenu: activeMenu,
@@ -491,7 +545,7 @@ const AIMitrModal = () => {
   return (
     <div className="fixed inset-0 z-[10000] bg-white flex flex-col h-[100dvh] w-screen overflow-hidden text-neutral-900 font-sans">
       
-      {/* Toast Notification (Monochrome Black/White) */}
+      {/* Toast Notification */}
       {toastText && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10002] bg-neutral-900 text-white text-xs px-4 py-2 rounded-full shadow-md transition-all font-medium">
           {toastText}
@@ -501,7 +555,6 @@ const AIMitrModal = () => {
       {/* ================= 1. MINIMAL MONOCHROME TOP HEADER ================= */}
       <header className="flex-none flex items-center justify-between px-3 sm:px-5 py-3 bg-white border-b border-neutral-100 z-20">
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* Back Button */}
           <button
             type="button"
             onClick={() => setIsOpen(false)}
@@ -513,7 +566,6 @@ const AIMitrModal = () => {
             </svg>
           </button>
 
-          {/* Circular PNG Logo Container (Clean Neutral Frame, Perfect 1:1 Square Fit) */}
           <div className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center overflow-hidden flex-shrink-0">
             {!logoError && LADDU_AI_LOGO ? (
               <img
@@ -527,7 +579,6 @@ const AIMitrModal = () => {
             )}
           </div>
 
-          {/* Clean Name & Subtle Subtitle */}
           <div className="min-w-0">
             <h1 className="text-[15px] font-semibold text-neutral-900 leading-tight truncate">
               Laddu AI
@@ -538,7 +589,6 @@ const AIMitrModal = () => {
           </div>
         </div>
 
-        {/* Right Header Actions: Cart + New Chat + Three Dots Menu */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {totalQty > 0 && (
             <button
@@ -555,7 +605,6 @@ const AIMitrModal = () => {
             </button>
           )}
 
-          {/* New Chat Icon */}
           <button
             type="button"
             onClick={() => {
@@ -577,7 +626,6 @@ const AIMitrModal = () => {
             </svg>
           </button>
 
-          {/* Three Dots Menu Icon */}
           <button
             type="button"
             onClick={() => setShowOptions(true)}
@@ -602,12 +650,10 @@ const AIMitrModal = () => {
             className={`w-full flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {msg.sender === 'user' ? (
-              // User Bubble: Pure soft gray (#f4f4f5), zero border
               <div className="max-w-[85%] sm:max-w-[75%] bg-neutral-100 rounded-[22px] px-4 py-3 text-[14.5px] leading-relaxed text-neutral-900">
                 {renderFormattedText(msg.text)}
               </div>
             ) : (
-              // Laddu AI Response: Clean black text on white canvas + monochrome dish cards
               <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
                 {renderFormattedText(msg.text)}
 
@@ -630,7 +676,7 @@ const AIMitrModal = () => {
                               }}
                               className="w-11 h-11 rounded-xl object-cover bg-neutral-200 flex-shrink-0"
                             />
-                            <div className="min-w-0">
+                            <div style={{ minWidth: 0 }}>
                               <div className="font-semibold text-xs text-neutral-900 truncate">{item.name}</div>
                               <div className="text-xs text-neutral-500 font-medium">
                                 ₹{item.price} {item.unit ? `• ${item.unit}` : ''}
@@ -659,7 +705,6 @@ const AIMitrModal = () => {
           </div>
         ))}
 
-        {/* Minimal Monochrome Typing Dots */}
         {isLoading && (
           <div className="w-full flex justify-start">
             <div className="flex items-center gap-1.5 py-2 px-1">
@@ -675,7 +720,6 @@ const AIMitrModal = () => {
 
       {/* ================= 3. ULTRA-CLEAN BOTTOM INPUT DOCK ================= */}
       <footer className="flex-none px-3 sm:px-4 py-3 bg-white max-w-3xl w-full mx-auto">
-        {/* Borderless, Outline-Free Suggestion Chips */}
         <div
           className="flex items-center gap-2 overflow-x-auto pb-2.5 text-xs text-neutral-700"
           style={{ scrollbarWidth: 'none' }}
@@ -692,7 +736,6 @@ const AIMitrModal = () => {
           ))}
         </div>
 
-        {/* Borderless Input Pill Bar (No '+' icon, Send button on right with active/inactive state) */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -710,7 +753,6 @@ const AIMitrModal = () => {
           />
 
           <div className="flex items-center gap-1">
-            {/* Voice Dictation Mic Button */}
             <button
               type="button"
               onClick={handleVoiceInput}
@@ -726,7 +768,6 @@ const AIMitrModal = () => {
               </svg>
             </button>
 
-            {/* Dedicated Send Button: Inactive (gray/disabled) when empty, Active (black) when text is entered */}
             <button
               type="submit"
               disabled={!canSend}
@@ -745,7 +786,6 @@ const AIMitrModal = () => {
         </form>
       </footer>
 
-      {/* Options Modal (Clean Monochrome) */}
       {showOptions && (
         <div
           className="fixed inset-0 bg-black/40 backdrop-blur-xs z-[10005] flex items-end md:items-center justify-center p-0 md:p-4"

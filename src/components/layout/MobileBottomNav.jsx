@@ -103,9 +103,9 @@ const MobileBottomNav = () => {
             <path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z" />
           </svg>
           <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-ping"></span>
-          <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+          {/* <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span> */}
         </div>
-        <span className="text-[11px] font-sans font-bold tracking-wide">AI Mitr</span>
+        <span className="text-[11px] font-sans font-bold tracking-wide">Laddu AI</span>
       </button>
     </div>
   );

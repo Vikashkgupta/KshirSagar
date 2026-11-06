@@ -1,9 +1,9 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers
-// Optimized for Google AI Studio Free Tier:
-// 1. Filters out deprecated 2.5 models, TTS/audio/image/embedding models, and zero-quota preview models.
-// 2. Prioritizes the newest Gemini 3.x & Gemma 3 models first so it doesn't waste requests on 404/429 models.
-// 3. Caches the working model in memory across warm serverless invocations.
+// Laddu AI — Smart Assistant for KshirSagar Sweets & Bakers + Automatic Supabase Session Logging
+// Features:
+// 1. Answers general world questions (Math, GK, Coding) & live KshirSagar Menu/Offers queries.
+// 2. Automatically logs & groups every user's conversation by `sessionId` into Supabase (`laddu_ai_chats`).
+// 3. Supports `GET /.netlify/functions/aiChat` to fetch all logged user sessions for the Admin Monitor.
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
@@ -52,9 +52,97 @@ const FALLBACK_OFFERS = [
   { title: "Party Combo Offer", code: "PARTY50", discount: "पिज़्ज़ा और स्नैक्स कॉम्बो पर ₹50 की छूट", active: true }
 ];
 
-// Warm-instance cache so we don't call ListModels on every single chat message
 let cachedWorkingModel = null;
 let cachedAvailableModels = null;
+
+// Helper to build Supabase headers supporting both `sb_publishable_...` keys and JWT `eyJ...` keys
+function getSupabaseHeaders(supabaseKey, extra = {}) {
+  const clean = String(supabaseKey || "").trim();
+  const h = {
+    "Content-Type": "application/json",
+    apikey: clean,
+    ...extra
+  };
+  if (clean.startsWith("eyJ")) {
+    h.Authorization = `Bearer ${clean}`;
+  }
+  return h;
+}
+
+// Logs or updates the user's chat session in Supabase (`public.laddu_ai_chats`)
+async function logChatToSupabase({
+  sessionId,
+  customerName,
+  customerMobile,
+  deviceInfo,
+  userMessage,
+  aiReply
+}) {
+  const supabaseUrl = (process.env.SUPABASE_URL || "https://frltketibbthwqydnhls.supabase.co").replace(/\/$/, "");
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+
+  if (!supabaseUrl || !supabaseKey || !sessionId || !userMessage) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const getUrl = `${supabaseUrl}/rest/v1/laddu_ai_chats?session_id=eq.${encodeURIComponent(sessionId)}&select=conversation,message_count,customer_name,customer_mobile`;
+
+    const existingRes = await fetch(getUrl, {
+      method: "GET",
+      headers: getSupabaseHeaders(supabaseKey)
+    });
+
+    let existingConversation = [];
+    let prevCount = 0;
+    let savedName = customerName || "Guest User";
+    let savedMobile = customerMobile || "";
+
+    if (existingRes.ok) {
+      const rows = await existingRes.json();
+      if (Array.isArray(rows) && rows.length > 0) {
+        const row = rows[0];
+        if (Array.isArray(row.conversation)) {
+          existingConversation = row.conversation;
+        }
+        prevCount = Number(row.message_count || 0);
+        if ((!customerName || customerName === "Guest User") && row.customer_name) {
+          savedName = row.customer_name;
+        }
+        if (!customerMobile && row.customer_mobile) {
+          savedMobile = row.customer_mobile;
+        }
+      }
+    }
+
+    const updatedConversation = [
+      ...existingConversation,
+      { role: "user", text: userMessage, timestamp: nowIso },
+      { role: "ai", text: aiReply, timestamp: nowIso }
+    ];
+
+    const upsertPayload = {
+      session_id: sessionId,
+      customer_name: savedName,
+      customer_mobile: savedMobile,
+      device_info: deviceInfo || "Web Browser",
+      message_count: prevCount + 1,
+      last_user_message: userMessage,
+      last_ai_reply: aiReply,
+      conversation: updatedConversation,
+      updated_at: nowIso
+    };
+
+    await fetch(`${supabaseUrl}/rest/v1/laddu_ai_chats`, {
+      method: "POST",
+      headers: getSupabaseHeaders(supabaseKey, {
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      }),
+      body: JSON.stringify(upsertPayload)
+    });
+  } catch (err) {
+    console.warn("[Laddu AI Supabase Log Warning]:", err.message);
+  }
+}
 
 async function fetchLiveAirtableData(baseId, apiKey) {
   if (!baseId || !apiKey) {
@@ -116,7 +204,6 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// Filters out non-text, TTS, and retired 2.5 models that cause 404/429 errors for new users
 function isCleanTextModel(name) {
   const n = String(name || "").toLowerCase();
   if (
@@ -130,7 +217,7 @@ function isCleanTextModel(name) {
     n.includes("robotics") ||
     n.includes("thinking") ||
     n.includes("learnlm") ||
-    n.includes("2.5-flash") || // Retired for new AI Studio accounts ("no longer available to new users")
+    n.includes("2.5-flash") ||
     n.includes("2.0-flash-exp")
   ) {
     return false;
@@ -138,13 +225,12 @@ function isCleanTextModel(name) {
   return n.includes("gemini") || n.includes("gemma-3");
 }
 
-// Ranks models so current-gen 3.x Flash-Lite / Flash and Gemma-3 (14,400 RPD free quota!) are tried properly
 function scoreModelPriority(name) {
   const n = String(name || "").toLowerCase();
   if (n.includes("gemini-3") && n.includes("flash-lite")) return 100;
   if (n.includes("gemini-3") && n.includes("flash")) return 95;
   if (n === "gemini-flash-lite-latest") return 90;
-  if (n.includes("gemma-3-27b-it")) return 85; // 14,400 free requests/day on Google AI Studio!
+  if (n.includes("gemma-3-27b-it")) return 85;
   if (n.includes("gemma-3-12b-it")) return 80;
   if (n === "gemini-flash-latest") return 75;
   if (n.includes("gemini-3") && n.includes("pro")) return 70;
@@ -157,7 +243,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const errors = [];
 
-  // 1. Discover and rank models once per warm container
   if (!cachedAvailableModels) {
     try {
       const listRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -198,7 +283,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
     ? [...new Set([...cachedAvailableModels, ...defaultCandidates])]
     : defaultCandidates;
 
-  // Always try the last known working model first!
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
@@ -207,8 +291,6 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
     const isGemmaModel = modelName.toLowerCase().startsWith("gemma");
 
-    // Note: Gemma models on AI Studio do not support `systemInstruction` or `responseMimeType: "application/json"`,
-    // so we fold the system prompt cleanly into the first user message when calling Gemma!
     const requestPayload = isGemmaModel
       ? {
           contents: [
@@ -240,7 +322,7 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
 
       if (res.ok) {
         const data = await res.json();
-        cachedWorkingModel = modelName; // Remember this fast working model for next calls!
+        cachedWorkingModel = modelName;
         return { ok: true, data, modelUsed: modelName };
       } else {
         const errBody = await res.text();
@@ -276,7 +358,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
-  // 1. Greetings
   if (/^(hi+|hello+|hey+|namaste|pranam|ram ram|hlo|हाय|नमस्ते|हेलो)$/i.test(q)) {
     return {
       reply: "नमस्ते! मैं **Laddu AI** हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?",
@@ -286,7 +367,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 2. Percentage math calculation
   const mathPercent = lower.match(/(\d+(?:\.\d+)?)\s*%\s*(?:of|ka|की|का)\s*(\d+(?:\.\d+)?)/);
   if (mathPercent) {
     const pct = Number(mathPercent[1]);
@@ -300,7 +380,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 3. Arithmetic expressions
   const cleanMath = q.replace(/[^0-9+\-*/().\s]/g, "").trim();
   if (/^\d+(?:\.\d+)?\s*[+\-*/]\s*\d+/.test(cleanMath)) {
     try {
@@ -318,7 +397,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     }
   }
 
-  // 4. Store info / address / contact
   if (
     lower.includes("time") ||
     lower.includes("kab khul") ||
@@ -345,7 +423,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 5. Offers
   if (lower.includes("offer") || lower.includes("discount") || lower.includes("coupon") || lower.includes("ऑफ़र")) {
     return {
       reply: `🎉 **क्षीर सागर के स्पेशल ऑफ़र्स:**\n\n${formatCleanOffers(offers)}`,
@@ -355,7 +432,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 6. Food / Menu / Budget queries
   if (
     lower.includes("menu") ||
     lower.includes("price") ||
@@ -384,7 +460,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, debugReason) {
     };
   }
 
-  // 7. General non-food / random text fallback (Doesn't dump the menu when the user typed random text like "fgffgfgfg"!)
   return {
     reply: "कृपया अपना सवाल थोड़ा स्पष्ट लिखें—आप मुझसे कोई भी सामान्य सवाल, गणित, या क्षीर सागर के मेन्यू और ऑफ़र्स के बारे में पूछ सकते हैं।",
     recommendedItems: [],
@@ -402,12 +477,48 @@ exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Content-Type": "application/json"
   };
 
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers, body: "" };
+  }
+
+  // GET request: Returns all logged user chat sessions from Supabase for the Admin Chat Viewer
+  if (event.httpMethod === "GET") {
+    const supabaseUrl = (process.env.SUPABASE_URL || "https://frltketibbthwqydnhls.supabase.co").replace(/\/$/, "");
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ success: false, sessions: [], message: "SUPABASE_ANON_KEY not set" })
+      };
+    }
+
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/laddu_ai_chats?select=*&order=updated_at.desc&limit=100`,
+        {
+          method: "GET",
+          headers: getSupabaseHeaders(supabaseKey)
+        }
+      );
+      const sessions = res.ok ? await res.json() : [];
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ success: true, sessions })
+      };
+    } catch (err) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ success: false, sessions: [], error: err.message })
+      };
+    }
   }
 
   if (event.httpMethod !== "POST") {
@@ -417,6 +528,10 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || "{}");
     const userMessage = (body.message || "").trim();
+    const sessionId = String(body.sessionId || "guest-session").trim();
+    const customerName = String(body.customerName || "Guest User").trim();
+    const customerMobile = String(body.customerMobile || "").trim();
+    const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 120);
     const chatHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
     const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
@@ -442,6 +557,14 @@ exports.handler = async (event) => {
         activeOffers,
         "GEMINI_API_KEY not found in environment variables."
       );
+      await logChatToSupabase({
+        sessionId,
+        customerName,
+        customerMobile,
+        deviceInfo,
+        userMessage,
+        aiReply: fallbackResult.reply
+      });
       return {
         statusCode: 200,
         headers,
@@ -520,6 +643,14 @@ ${JSON.stringify(activeOffers)}
         activeOffers,
         callResult.errorText
       );
+      await logChatToSupabase({
+        sessionId,
+        customerName,
+        customerMobile,
+        deviceInfo,
+        userMessage,
+        aiReply: fallbackResult.reply
+      });
       return {
         statusCode: 200,
         headers,
@@ -533,7 +664,6 @@ ${JSON.stringify(activeOffers)}
     }
 
     let rawText = callResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    // Strip markdown ```json ... ``` fences if returned by Gemma models
     rawText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     let parsed;
@@ -547,6 +677,18 @@ ${JSON.stringify(activeOffers)}
         quickFollowUps: []
       };
     }
+
+    const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
+
+    // Log this turn into Supabase under the user's session_id
+    await logChatToSupabase({
+      sessionId,
+      customerName,
+      customerMobile,
+      deviceInfo,
+      userMessage,
+      aiReply: finalReply
+    });
 
     let matchedItems = [];
     if (parsed.showFoodCards) {
@@ -571,7 +713,7 @@ ${JSON.stringify(activeOffers)}
         mode: "laddu_ai_live",
         modelUsed: callResult.modelUsed,
         dataSource: liveData.source,
-        reply: parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?",
+        reply: finalReply,
         recommendedItems: matchedItems.slice(0, 4),
         quickFollowUps:
           Array.isArray(parsed.quickFollowUps) && parsed.quickFollowUps.length > 0
