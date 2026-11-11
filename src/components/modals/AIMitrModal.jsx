@@ -642,15 +642,19 @@ const AIMitrModal = () => {
     const { customerName, customerMobile } = getKnownCustomerIdentity();
     const silentDevice = await getCompleteDeviceBatteryAndLocationContext(userLocationText);
 
+    let streamingBotId = null;
     try {
       const historyPayload = messages.slice(-8).map((m) => ({
         role: m.sender === 'bot' ? 'assistant' : 'user',
         content: m.text
       }));
 
-      const data = await fetchFunctionJson('/.netlify/functions/aiChat', {
+      streamingBotId = 'bot-' + Date.now();
+      setMessages((prev) => [...prev, { id: streamingBotId, sender: 'bot', text: '', recommendedItems: [], whatsappOrderText: '', streaming: true }]);
+
+      const streamResponse = await fetch('/.netlify/functions/aiChatStream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify({
           sessionId,
           isReturningVisitor,
@@ -678,6 +682,37 @@ const AIMitrModal = () => {
           pageContext: getFrontendWebsiteText()
         })
       });
+
+      if (!streamResponse.ok || !streamResponse.body) throw new Error(`Streaming API failed (${streamResponse.status})`);
+      const streamReader = streamResponse.body.getReader();
+      const streamDecoder = new TextDecoder();
+      let streamBuffer = '';
+      let data = null;
+      while (true) {
+        const { value, done } = await streamReader.read();
+        if (done) break;
+        streamBuffer += streamDecoder.decode(value, { stream: true });
+        const frames = streamBuffer.split(/\r?\n\r?\n/);
+        streamBuffer = frames.pop() || '';
+        for (const frame of frames) {
+          const eventName = (frame.match(/^event:\s*(.+)$/m) || [])[1]?.trim();
+          const dataLine = frame.split(/\r?\n/).find((line) => line.startsWith('data:'));
+          if (!dataLine) continue;
+          let payload;
+          try { payload = JSON.parse(dataLine.slice(5).trim()); } catch { continue; }
+          if (eventName === 'token' && payload.text) {
+            setMessages((prev) => prev.map((msg) => msg.id === streamingBotId ? { ...msg, text: msg.text + payload.text } : msg));
+          } else if (eventName === 'final') {
+            data = payload;
+          } else if (eventName === 'error') {
+            throw new Error(payload.message || 'AI streaming error');
+          }
+        }
+      }
+      if (data?.reply) {
+        // Replace the progressive placeholder with canonical final text + all structured features.
+        setMessages((prev) => prev.map((msg) => msg.id === streamingBotId ? { ...msg, text: data.reply, streaming: false } : msg));
+      }
 
       if (data && data.reply) {
         if (data.debugError) {
@@ -723,16 +758,13 @@ const AIMitrModal = () => {
           }, 900);
         }
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: 'bot-' + Date.now(),
-            sender: 'bot',
-            text: data.reply,
-            recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
-            whatsappOrderText: data.whatsappOrderText || ''
-          }
-        ]);
+        setMessages((prev) => prev.map((msg) => msg.id === streamingBotId ? {
+          ...msg,
+          text: data.reply,
+          streaming: false,
+          recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
+          whatsappOrderText: data.whatsappOrderText || ''
+        } : msg));
 
         if (Array.isArray(data.quickFollowUps) && data.quickFollowUps.length > 0) {
           setChips(data.quickFollowUps);
@@ -756,6 +788,7 @@ const AIMitrModal = () => {
         ]);
       }
     } catch (error) {
+      if (typeof streamingBotId !== 'undefined') setMessages((prev) => prev.filter((msg) => msg.id !== streamingBotId));
       console.warn('[Laddu AI Notice]:', error);
       setMessages((prev) => [
         ...prev,
