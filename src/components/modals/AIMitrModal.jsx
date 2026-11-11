@@ -1,12 +1,7 @@
 // File: src/components/modals/AIMitrModal.jsx
 // Laddu AI — Final Complete Version
-// Includes:
-// 1. Clean SVG Speaker Icon (`सुनें`) & Clean SVG Stop Icon (`रोकें`) — no ugly emoji speaker
-// 2. Clean SVG Shopping Cart Icon in Header — no emoji cart
-// 3. Transparent follow-up prompt chips (`bg-transparent`)
-// 4. Smart `ks_chat_cleared_at` timestamp so refreshing after "Clear Chat" keeps the user's screen clean while preserving AI & Admin Supabase memory
-// 5. Exact store address: "Nai Bazar, Mairwa (Siwan)" (no Power House/Electric Office)
-// 6. Full Cart Control (`addToCart`, `changeQuantity`, `clearCart`, `restoreLastOrder`), Brave Battery Shield detection & Location Context
+// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
+// Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -28,7 +23,11 @@ const STORE_PROFILE = {
   established: 'Since 1998 — Tradition of Excellence',
   tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya)',
   timings: 'सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)',
-  address: 'Nai Bazar, Mairwa (Siwan)',
+  address: 'Nai Bazar, Mairwa, Bihar 841239',
+  plusCode: '65P2+W8 Mairwa, Bihar',
+  lat: 26.2373274,
+  lon: 84.1508169,
+  googleMapsUrl: 'https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9',
   phone: '+91 8226935738',
   whatsapp: '+91 8226935738',
   website: 'https://kshirsagarsweets.netlify.app/'
@@ -90,22 +89,23 @@ function getKnownCustomerIdentity() {
   }
 }
 
-// Calculates straight-line distance (in km) from KshirSagar Shop in Nai Bazar, Mairwa (26.23°N, 84.15°E)
+// Calculates straight-line & estimated road distance (in km) from exact KshirSagar Pin (26.2373274°N, 84.1508169°E)
 function calcDistanceFromMairwaShop(lat, lon) {
   const R = 6371;
-  const dLat = ((lat - 26.23) * Math.PI) / 180;
-  const dLon = ((lon - 84.15) * Math.PI) / 180;
+  const dLat = ((lat - STORE_PROFILE.lat) * Math.PI) / 180;
+  const dLon = ((lon - STORE_PROFILE.lon) * Math.PI) / 180;
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((26.23 * Math.PI) / 180) *
+    Math.cos((STORE_PROFILE.lat * Math.PI) / 180) *
       Math.cos((lat * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return (R * c).toFixed(1);
+  const straightKm = R * c;
+  const roadKm = Math.max(0.1, straightKm * 1.22);
+  return roadKm.toFixed(1);
 }
 
-// Feature #8 Complete: Detects Browser (Brave vs Chrome), Real Battery vs Brave Fake "100% Charging" Shield, Network & Location
 async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   const isAndroid = /Android/i.test(ua);
@@ -118,9 +118,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
     if (typeof navigator !== 'undefined' && navigator.brave && typeof navigator.brave.isBrave === 'function') {
       isBraveBrowser = await navigator.brave.isBrave();
     }
-  } catch {
-    // Ignore
-  }
+  } catch {}
 
   const browserLabel = isBraveBrowser ? 'Brave Browser' : /Edg/i.test(ua) ? 'Edge' : /Chrome/i.test(ua) ? 'Chrome' : 'Browser';
   const platform = `${os} • ${browserLabel} (${screenStr})`;
@@ -138,9 +136,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
         batteryText = `${pct}% (${bat.charging ? '⚡ चार्ज हो रहा है (Charging)' : 'चार्जिंग पर नहीं है (Not Charging)'})`;
       }
     }
-  } catch {
-    // Ignore
-  }
+  } catch {}
 
   let networkText = typeof navigator !== 'undefined' && navigator.onLine === false ? 'Offline' : 'Online';
   try {
@@ -151,9 +147,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
       if (typeof conn.downlink === 'number') parts.push(`${conn.downlink} Mbps`);
       if (parts.length > 0) networkText = parts.join(' • ');
     }
-  } catch {
-    // Ignore
-  }
+  } catch {}
 
   return {
     platform,
@@ -240,7 +234,6 @@ const AIMitrModal = () => {
 
   const canSend = input.trim().length > 0 && !isLoading;
 
-  // Marks screen chat as cleared at current timestamp so refreshing the page keeps the screen clean while AI & Admin keep full Supabase history
   const handleClearScreenChat = (toastMessage = 'चैट साफ़ कर दी गई') => {
     try {
       localStorage.setItem('ks_chat_cleared_at', new Date().toISOString());
@@ -257,7 +250,6 @@ const AIMitrModal = () => {
     showToast(toastMessage);
   };
 
-  // Feature #15: Automatically remember dishes opened in DishPopup
   useEffect(() => {
     const dishName = activeDishPopup?.activeDish?.item?.name;
     if (activeDishPopup?.isOpen && dishName) {
@@ -280,7 +272,7 @@ const AIMitrModal = () => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           const distKm = calcDistanceFromMairwaShop(lat, lon);
-          let placeLabel = `GPS (${lat.toFixed(4)}, ${lon.toFixed(4)}) • क्षीर सागर (नई बाज़ार, मैरवा) से दूरी: ~${distKm} km`;
+          let placeLabel = `GPS (${lat.toFixed(4)}, ${lon.toFixed(4)}) • क्षीर सागर (Nai Bazar, Mairwa 841239) से सड़क दूरी: ~${distKm} km`;
 
           try {
             const revRes = await fetch(
@@ -299,12 +291,10 @@ const AIMitrModal = () => {
                 '';
               const distName = addr.state_district || addr.state || '';
               if (area) {
-                placeLabel = `${area}${distName ? ', ' + distName : ''} (दुकान से दूरी: ~${distKm} km)`;
+                placeLabel = `${area}${distName ? ', ' + distName : ''} (दुकान से सड़क दूरी: ~${distKm} km)`;
               }
             }
-          } catch {
-            // Keep coordinates + distance if reverse geocoding is offline
-          }
+          } catch {}
 
           setUserLocationText(placeLabel);
           try {
@@ -360,7 +350,6 @@ const AIMitrModal = () => {
     setTimeout(() => setToastText(''), 2200);
   };
 
-  // Feature #17: 1-Click Voice Read-Aloud
   const handleSpeakMessage = (msgId, rawText) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       showToast('आपका ब्राउज़र ऑडियो सपोर्ट नहीं करता');
@@ -396,9 +385,7 @@ const AIMitrModal = () => {
       if (localRes.ok && contentType.includes('application/json')) {
         return await localRes.json();
       }
-    } catch {
-      // Fallback to remote live Netlify function if on localhost
-    }
+    } catch {}
 
     if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
       try {
@@ -407,15 +394,12 @@ const AIMitrModal = () => {
         if (remoteRes.ok && remoteType.includes('application/json')) {
           return await remoteRes.json();
         }
-      } catch {
-        // Handled by local engine
-      }
+      } catch {}
     }
 
     return null;
   };
 
-  // Two-Way Supabase History Sync (Respects `ks_chat_cleared_at` so cleared messages don't reappear on page refresh!)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -447,7 +431,6 @@ const AIMitrModal = () => {
             clearedAt = localStorage.getItem('ks_chat_cleared_at') || '';
           } catch {}
 
-          // Only display messages created AFTER the last time the user clicked "Clear Chat"
           const visibleConv = clearedAt
             ? savedConv.filter((turn) => turn.timestamp && turn.timestamp > clearedAt)
             : savedConv;
@@ -1043,7 +1026,7 @@ const AIMitrModal = () => {
 
       {/* ================= 3. ULTRA-CLEAN BOTTOM INPUT DOCK ================= */}
       <footer className="flex-none px-3 sm:px-4 py-3 bg-white max-w-3xl w-full mx-auto">
-        {/* Transparent Follow-Up Prompts Bar (No gray background fill) */}
+        {/* Transparent Follow-Up Prompts Bar */}
         <div
           className="flex items-center gap-2 overflow-x-auto pb-2.5 text-xs text-neutral-600"
           style={{ scrollbarWidth: 'none' }}

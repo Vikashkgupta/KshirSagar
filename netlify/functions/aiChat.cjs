@@ -1,11 +1,9 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Super-Smart Context-Aware Assistant for KshirSagar Sweets & Bakers + Full Supabase Sync
-// Final Version Fixes:
-// 1. Store address strictly set to "Nai Bazar, Mairwa (Siwan)" — removed all references to "Power House / Electric Office"
-// 2. Cart Remove & Clear Actions (`CLEAR_CART`, `autoRemoveItems`, `RESTORE_LAST_ORDER`) mapped to Redux `cartSlice.js`
-// 3. Brave Browser & iOS Battery Privacy Shield Detection
-// 4. Two-Way Supabase History Sync (`GET /.netlify/functions/aiChat?sessionId=KS-...` + merges full DB history into AI context)
-// 5. Feature #8 Complete Location Context (Netlify `x-nf-geo` + client GPS/City location)
+// Laddu AI — Super-Smart Context-Aware Assistant for KshirSagar Sweets & Bakers + Full Supabase Sync + 5,000-Landmark Engine
+// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
+// Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
+
+const { SHOP_LOCATION, searchMairwaLandmarks } = require("./mairwaLandmarks.cjs");
 
 const SUPABASE_PROJECT_ID = "frltketibbthwqydnhls";
 const DEFAULT_SUPABASE_URL = "https://" + SUPABASE_PROJECT_ID + ".supabase.co";
@@ -17,7 +15,12 @@ const STORE_PROFILE = {
   tagline: "हमेशा कुछ नया (Hamesha Kuch Naya)",
   timings: "सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)",
   deliveryTimings: "सुबह 10:00 बजे से रात 8:00 बजे तक (होम डिलीवरी सुविधा)",
-  address: "Nai Bazar, Mairwa (Siwan)",
+  address: "Nai Bazar, Mairwa, Bihar 841239",
+  plusCode: "65P2+W8 Mairwa, Bihar",
+  coordinates: { lat: 26.2373274, lon: 84.1508169 },
+  googleMapsUrl: "https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9",
+  googleMapsFullUrl:
+    "https://www.google.com/maps/place/Kshirsagar/@26.2373274,84.1508169,807m/data=!3m2!1e3!4b1!4m6!3m5!1s0x399253b11832e8db:0x88f735f0ec8e1283!8m2!3d26.2373274!4d84.1508169!16s%2Fg%2F11dzd377b_",
   phone: "+91 8226935738",
   whatsapp: "+91 8226935738",
   email: "vikashmw900@gmail.com",
@@ -29,22 +32,6 @@ const STORE_PROFILE = {
     "Hygienic Preparation (पूरी तरह साफ़-सुथरी और हाइजीनिक किचन)",
     "Custom Cake Orders (बर्थडे, एनिवर्सरी और पार्टी के लिए कस्टम केक ऑर्डर की सुविधा)",
     "Zero Commission Direct Ordering (बिना किसी एक्स्ट्रा ऐप कमीशन के सीधा दुकान के रेट पर होम डिलीवरी)"
-  ]
-};
-
-const MAIRWA_LOCAL_GUIDE = {
-  shopAddress: "Nai Bazar, Mairwa (Siwan)",
-  shopCoordinates: { lat: 26.23, lon: 84.15 },
-  nearbyPlaces: [
-    "मैरवा रेलवे स्टेशन: दुकान (नई बाज़ार, मैरवा) से ~1 km",
-    "मैरवा धाम: दुकान से ~0.8 km",
-    "हरिराम कॉलेज (H.R. College Mairwa): ~1.5 km",
-    "मझौली चौक / गुठनी मोड़: ~1.5 km",
-    "जीरादेई (डॉ. राजेंद्र प्रसाद स्मारक): ~10 km",
-    "गुठनी बाज़ार: ~14 km",
-    "भाटपार रानी: ~15 km",
-    "दरौली: ~20 km",
-    "सिवान शहर: ~22 km"
   ]
 };
 
@@ -132,9 +119,7 @@ function extractUserLocationContext(eventHeaders, clientDevice) {
         }
       }
     }
-  } catch {
-    // Ignore geo decode errors
-  }
+  } catch {}
 
   const clientLoc = clientDevice?.locationText || "";
   if (clientLoc && netlifyGeoStr) {
@@ -210,6 +195,7 @@ function getLiveISTClockAndShopStatus() {
   };
 }
 
+// Live Weather using exact KshirSagar coordinates (26.2373274, 84.1508169)
 async function getLiveMairwaWeather() {
   const now = Date.now();
   if (cachedWeather.text && now - cachedWeather.fetchedAt < 15 * 60 * 1000) {
@@ -217,7 +203,7 @@ async function getLiveMairwaWeather() {
   }
 
   try {
-    const url = "https://api.open-meteo.com/v1/forecast?latitude=26.23&longitude=84.15&current_weather=true&timezone=Asia%2FKolkata";
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=26.2373&longitude=84.1508&current_weather=true&timezone=Asia%2FKolkata";
     const res = await fetchWithTimeout(url, {}, 950);
     if (res.ok) {
       const data = await res.json();
@@ -235,9 +221,7 @@ async function getLiveMairwaWeather() {
         return summary;
       }
     }
-  } catch {
-    // Ignore weather timeout smoothly
-  }
+  } catch {}
   return cachedWeather.text || "मैरवा में सुहाना मौसम";
 }
 
@@ -289,9 +273,7 @@ async function fetchSessionFromSupabase(sessionId) {
         return rows[0];
       }
     }
-  } catch {
-    // Ignore
-  }
+  } catch {}
   return null;
 }
 
@@ -523,9 +505,7 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
           cachedDiscoveredModels = found;
         }
       }
-    } catch {
-      // Ignore discovery timeout
-    }
+    } catch {}
   }
 
   let modelsToTry =
@@ -584,22 +564,7 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   return { ok: false, errorText: errors.join(" | ") };
 }
 
-function formatCleanOffers(offers) {
-  const list = Array.isArray(offers) && offers.length > 0 ? offers : FALLBACK_OFFERS;
-  return list
-    .map((o) => {
-      const title = o.title || o.Title || o.Name || "स्पेशल ऑफ़र";
-      const code = o.code || o.Code || o.PromoCode || "";
-      const discount = o.discount || o.Discount || o.description || o.Description || "";
-      let str = `• **${title}**`;
-      if (code && code !== "undefined") str += ` — कोड: \`${code}\``;
-      if (discount && discount !== "undefined") str += ` (${discount})`;
-      return str;
-    })
-    .join("\n");
-}
-
-function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherInfo, clientCart, clientDevice, locationStr, debugReason) {
+function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherInfo, clientCart, clientDevice, locationStr, matchedLandmarks, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
@@ -612,6 +577,23 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
       reply: "✅ मैंने आपका कार्ट पूरी तरह खाली (0 items) कर दिया है! आप जब चाहें नए आइटम्स जोड़ सकते हैं।",
       recommendedItems: [],
       action: "CLEAR_CART",
+      debugError: debugReason || null,
+      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
+    };
+  }
+
+  // If the user mentioned a matched village/landmark from mairwaLandmarks.cjs!
+  if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) {
+    const top = matchedLandmarks[0];
+    return {
+      reply:
+        `📍 **${top.name}** से **KshirSagar (Nai Bazar, Mairwa, Bihar 841239)** की जानकारी:\n\n` +
+        `• **सड़क से अनुमानित दूरी:** ~${top.roadKm} km (${top.direction})\n` +
+        `• **पहुँचने का अनुमानित समय:** ~${top.timeMins} मिनट\n` +
+        `• **डिलीवरी ज़ोन:** ${top.zone}\n` +
+        `• **दुकान का पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
+        `• **Google Maps लिंक:** ${STORE_PROFILE.googleMapsUrl}`,
+      recommendedItems: [],
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
@@ -678,8 +660,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
   }
 
   if (
-    lower.includes("time") ||
-    lower.includes("kab khul") ||
     lower.includes("address") ||
     lower.includes("kahan") ||
     lower.includes("number") ||
@@ -688,7 +668,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
     lower.includes("dukan") ||
     lower.includes("shop") ||
     lower.includes("mairwa") ||
-    lower.includes("station") ||
     lower.includes("खुलती") ||
     lower.includes("कहाँ") ||
     lower.includes("पता")
@@ -696,28 +675,14 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
     return {
       reply:
         `**${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
+        `• **पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
         `• **समय:** ${STORE_PROFILE.timings} (${clockInfo.shopStatusNote})\n` +
         `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}\n` +
-        `• **पता:** ${STORE_PROFILE.address}\n` +
+        `• **Google Maps:** ${STORE_PROFILE.googleMapsUrl}\n` +
         `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}`,
       recommendedItems: [],
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
-    };
-  }
-
-  if (
-    /\b(hi+|hello+|hey+|hlo|namaste|pranam|ram ram|dost|bhai|kaise ho|kya haal|kya hua|kon ho|kaun ho)\b/i.test(lower) ||
-    lower.includes("नमस्ते") ||
-    lower.includes("कैसे हो")
-  ) {
-    return {
-      reply:
-        `नमस्ते दोस्त! मैं बिल्कुल ठीक हूँ। मैं **Laddu AI** हूँ — क्षीर सागर का स्मार्ट सहायक।\n` +
-        `${clockInfo.shopStatusNote}\n\nबताइए, आज आपके लिए क्या करूँ?`,
-      recommendedItems: [],
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो", "🏷️ आज के ऑफ़र्स क्या हैं?"]
     };
   }
 
@@ -840,6 +805,9 @@ exports.handler = async (event) => {
     const clockInfo = getLiveISTClockAndShopStatus();
     const locationStr = extractUserLocationContext(event.headers, clientDevice);
 
+    // 0.5ms Instant Search across our Mairwa Landmarks & Aliases database (`mairwaLandmarks.cjs`)!
+    const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
+
     const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
       clientMenu
         ? Promise.resolve({ menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" })
@@ -888,6 +856,7 @@ exports.handler = async (event) => {
         clientCart,
         clientDevice,
         locationStr,
+        matchedLandmarks,
         "GEMINI_API_KEY not found in environment variables."
       );
       const supabaseStatus = await saveSessionToSupabase({
@@ -922,7 +891,7 @@ CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
 - The user can ask you ANYTHING in the world: casual conversation, math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
 - For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in your JSON output.
 
-CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & SMART CONTEXT EXPERT:
+CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & HYPER-LOCAL MAIRWA EXPERT:
 Use the exact real-time context provided below whenever relevant:
 
 === 1. LIVE INDIAN CLOCK, DATE & SHOP COUNTDOWN (Features #1, #2, #3) ===
@@ -949,13 +918,19 @@ Use the exact real-time context provided below whenever relevant:
 === 4. USER'S DEVICE, BATTERY, NETWORK & LOCATION CONTEXT (Feature #8 Complete) ===
 - Device & Browser: ${clientDevice.platform || deviceInfo}
 - Battery Status: ${clientDevice.batteryText || "Not reported by browser"}
-  (NOTE: If Battery Status mentions "Brave Browser Privacy Shield", explain clearly to the user that Brave Browser's Fingerprinting Shield spoofs battery as "100% Charging" to protect privacy, and turning off Brave Shield or opening in Chrome shows the exact real battery %!)
 - Network Connection: ${clientDevice.networkText || "Online"}
 - User Location / Region: ${locationStr}
 
-=== 5. MAIRWA-SIWAN HYPER-LOCAL LANDMARKS & DISTANCE GUIDE (Feature #9) ===
-- Exact Store Address: "Nai Bazar, Mairwa (Siwan)" (IMPORTANT: NEVER mention Power House or Electric Office in the address—the address is strictly "Nai Bazar, Mairwa (Siwan)").
-- Nearby Distances: ${JSON.stringify(MAIRWA_LOCAL_GUIDE)}
+=== 5. OFFICIAL STORE PINPOINT LOCATION & MATCHED LOCAL LANDMARKS (Feature #9 — 0.5ms Lookup Engine) ===
+- Exact Store Address: "Nai Bazar, Mairwa, Bihar 841239" (Plus Code: "65P2+W8 Mairwa, Bihar", Exact Coordinates: 26.2373274° N, 84.1508169° E).
+- Official Google Maps Link: ${STORE_PROFILE.googleMapsUrl}
+- IMPORTANT: Never mention Power House or Electric Office—the address is strictly "Nai Bazar, Mairwa, Bihar 841239".
+- Matched Landmarks from User's Query (from our Mairwa-Siwan Landmark Database): ${
+      matchedLandmarks.length > 0
+        ? JSON.stringify(matchedLandmarks)
+        : "No specific village/landmark name in this message; use general Mairwa store location if asked."
+    }
+  (Whenever a landmark/village is matched above, state its exact "roadKm" distance, "timeMins" travel time, "direction", and "zone" from our Nai Bazar, Mairwa shop, and include the Google Maps link ${STORE_PROFILE.googleMapsUrl}!)
 
 === 6. SMART HALWAI PORTION & PARTY CALCULATOR (Feature #12) ===
 ${JSON.stringify(HALWAI_PORTION_GUIDE)}
@@ -986,7 +961,7 @@ CRITICAL CART RULES — YOU MUST SET THESE JSON FIELDS WHENEVER THE USER ASKS TO
 1. CLEAR / EMPTY ENTIRE CART: If the user asks to empty, clear, or set their cart to 0 (e.g. "Cart 0 kr do", "Cart khali kr do", "Sab hata do", "Clear cart"), you MUST set:
    "action": "CLEAR_CART"
 2. REMOVE / DECREASE SPECIFIC ITEMS FROM CART: If the user asks to remove or reduce specific item(s) from their cart (e.g. "Rasmalai hata do", "1 Gulab Jamun kam kr do", "Remove pizza from cart"), you MUST populate:
-   "autoRemoveItems": [{"name": "Exact Item Name from Current Cart", "qty": 99}] (use the exact qty to remove, or 99 to remove all of that item).
+   "autoRemoveItems": [{"name": "Exact Item Name from Current Cart", "qty": 99}]
 3. ADD ITEMS TO CART: If the user asks to add item(s) to their cart (e.g. "2 Rasmalai cart me daal do"), you MUST populate:
    "autoAddItems": [{"name": "Exact Menu Item Name", "qty": 2}]
 4. RESTORE LAST ORDER: If the user asks to restore their previous/last cleared cart, set:
@@ -1033,6 +1008,7 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
         clientCart,
         clientDevice,
         locationStr,
+        matchedLandmarks,
         callResult.errorText
       );
       const supabaseStatus = await saveSessionToSupabase({
@@ -1156,6 +1132,7 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
         modelUsed: callResult.modelUsed,
         dataSource: liveData.source,
         supabaseStatus,
+        matchedLandmarks,
         reply: finalReply,
         recommendedItems: matchedItems.slice(0, 4),
         autoAddItems: resolvedAutoAdd,
@@ -1171,7 +1148,7 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
     };
   } catch (err) {
     const clockInfo = getLiveISTClockAndShopStatus();
-    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS, clockInfo, "", {}, {}, "Mairwa, Bihar", err.message);
+    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS, clockInfo, "", {}, {}, "Mairwa, Bihar", [], err.message);
     return {
       statusCode: 200,
       headers,
