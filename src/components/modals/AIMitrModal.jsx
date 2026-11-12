@@ -1,5 +1,5 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — Final Complete Version with Smooth ChatGPT-Style Word-by-Word Streaming + Blinking Cursor
+// Laddu AI — Final Complete Version with Smooth Word-by-Word Chat Streaming (No Blinking Cursor)
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -666,7 +666,7 @@ const AIMitrModal = () => {
     }, 1400);
   };
 
-  const renderFormattedText = (rawText, isStreamingNow = false) => {
+  const renderFormattedText = (rawText) => {
     const html = String(rawText || '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -679,11 +679,7 @@ const AIMitrModal = () => {
       .replace(/\n\n/g, '</p><p class="mt-3">')
       .replace(/\n/g, '<br/>');
 
-    const cursorHtml = isStreamingNow
-      ? '<span class="inline-block w-1.5 h-4 ml-1 align-middle bg-neutral-900 animate-pulse rounded-xs"></span>'
-      : '';
-
-    return <span dangerouslySetInnerHTML={{ __html: `<p>${html}${cursorHtml}</p>` }} />;
+    return <span dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />;
   };
 
   const sendMessage = async (textToSend) => {
@@ -980,11 +976,11 @@ const AIMitrModal = () => {
             >
               {msg.sender === 'user' ? (
                 <div className="max-w-[85%] sm:max-w-[75%] bg-neutral-100 rounded-[22px] px-4 py-3 text-[14.5px] leading-relaxed text-neutral-900">
-                  {renderFormattedText(msg.text, false)}
+                  {renderFormattedText(msg.text)}
                 </div>
               ) : (
                 <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
-                  {renderFormattedText(msg.text, isMsgStreaming)}
+                  {renderFormattedText(msg.text)}
 
                   {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button (Shown once streaming finishes) */}
                   {!isMsgStreaming && (
