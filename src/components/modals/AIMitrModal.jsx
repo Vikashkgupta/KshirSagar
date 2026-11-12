@@ -1,5 +1,5 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — Final Complete Version with Smooth Word-by-Word Chat Streaming (No Blinking Cursor)
+// Laddu AI — True Backend SSE Token-by-Token Streaming Consumer (`ReadableStream` + `TextDecoder`)
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -89,7 +89,6 @@ function getKnownCustomerIdentity() {
   }
 }
 
-// Calculates straight-line & estimated road distance (in km) from exact KshirSagar Pin (26.2373274°N, 84.1508169°E)
 function calcDistanceFromMairwaShop(lat, lon) {
   const R = 6371;
   const dLat = ((lat - STORE_PROFILE.lat) * Math.PI) / 180;
@@ -238,7 +237,6 @@ const AIMitrModal = () => {
 
   const canSend = input.trim().length > 0 && !isLoading;
 
-  // Cleanup streaming timer on unmount
   useEffect(() => {
     return () => {
       if (streamTimerRef.current) {
@@ -247,8 +245,8 @@ const AIMitrModal = () => {
     };
   }, []);
 
-  // Smooth word-by-word ChatGPT-style streaming engine
-  const streamBotReply = ({ fullText, recommendedItems = [], whatsappOrderText = '' }) => {
+  // Fallback progressive word stream (only used if running in a local/buffered environment where SSE headers aren't returned)
+  const streamBotReplyFallback = ({ fullText, recommendedItems = [], whatsappOrderText = '' }) => {
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current);
       streamTimerRef.current = null;
@@ -256,12 +254,9 @@ const AIMitrModal = () => {
 
     const msgId = 'bot-' + Date.now();
     const safeFull = String(fullText || '');
-    // Split into small token chunks (preserving spaces & newlines)
     const tokens = safeFull.match(/\S+\s*|\n+/g) || [safeFull];
-
-    // Adaptive chunk size so short answers stream gently and long answers finish in ~1.8s
     const stepSize = tokens.length > 140 ? 4 : tokens.length > 70 ? 2 : 1;
-    let index = 0;
+    let index = stepSize;
 
     setStreamingMsgId(msgId);
     setMessages((prev) => [
@@ -275,7 +270,6 @@ const AIMitrModal = () => {
         isStreaming: true
       }
     ]);
-    index = stepSize;
 
     streamTimerRef.current = setInterval(() => {
       index += stepSize;
@@ -302,7 +296,7 @@ const AIMitrModal = () => {
           prev.map((m) => (m.id === msgId ? { ...m, text: partial } : m))
         );
       }
-    }, 24);
+    }, 22);
   };
 
   const handleClearScreenChat = (toastMessage = 'चैट साफ़ कर दी गई') => {
@@ -666,6 +660,51 @@ const AIMitrModal = () => {
     }, 1400);
   };
 
+  // Applies cart/modal actions returned from either SSE `done` event or buffered JSON response
+  const executeAiMetadataActions = (metaData) => {
+    if (!metaData) return;
+
+    if (metaData.detectedCustomerName && String(metaData.detectedCustomerName).trim()) {
+      try {
+        localStorage.setItem('ks_customer_name', String(metaData.detectedCustomerName).trim());
+      } catch {}
+    }
+
+    if (Array.isArray(metaData.autoAddItems) && metaData.autoAddItems.length > 0) {
+      metaData.autoAddItems.forEach((item) => {
+        handleAddToReduxCart(item, item.qty || 1);
+      });
+    }
+
+    if (Array.isArray(metaData.autoRemoveItems) && metaData.autoRemoveItems.length > 0) {
+      metaData.autoRemoveItems.forEach((rem) => {
+        handleRemoveFromReduxCart(rem.name, rem.qty || 99);
+      });
+    }
+
+    if (metaData.action === 'CLEAR_CART') {
+      dispatch(clearCart());
+      showToast('कार्ट खाली (0) कर दिया गया');
+    } else if (metaData.action === 'RESTORE_LAST_ORDER') {
+      dispatch(restoreLastOrder());
+      showToast('पिछला ऑर्डर वापस कार्ट में आ गया');
+    } else if (metaData.action === 'OPEN_CART') {
+      setTimeout(() => {
+        setIsOpen(false);
+        dispatch(toggleCart(true));
+      }, 900);
+    } else if (metaData.action === 'OPEN_CUSTOM_CAKE') {
+      setTimeout(() => {
+        setIsOpen(false);
+        dispatch(toggleCustomRequest(true));
+      }, 900);
+    }
+
+    if (Array.isArray(metaData.quickFollowUps) && metaData.quickFollowUps.length > 0) {
+      setChips(metaData.quickFollowUps);
+    }
+  };
+
   const renderFormattedText = (rawText) => {
     const html = String(rawText || '')
       .replace(/&/g, '&amp;')
@@ -727,94 +766,134 @@ const AIMitrModal = () => {
         content: m.text
       }));
 
-      const data = await fetchFunctionJson('/.netlify/functions/aiChat', {
+      const requestPayload = {
+        stream: true,
+        sessionId,
+        isReturningVisitor,
+        customerName,
+        customerMobile,
+        deviceInfo: `${silentDevice.platform} | Bat: ${silentDevice.batteryText.slice(0, 35)} | Net: ${silentDevice.networkText}`,
+        clientDevice: silentDevice,
+        clientCart: {
+          items: cartItems.map((i) => ({
+            key: i.key,
+            name: i.name,
+            price: i.price,
+            qty: i.qty,
+            variant: i.variant || ''
+          })),
+          totalQty,
+          grandTotal,
+          orderType
+        },
+        recentViewedDishes,
+        message: trimmed,
+        history: historyPayload,
+        clientMenu: activeMenu,
+        clientOffers: liveOffersCache.length > 0 ? liveOffersCache : null,
+        pageContext: getFrontendWebsiteText()
+      };
+
+      const targetUrl =
+        typeof window !== 'undefined' && window.location.hostname === 'localhost'
+          ? `${LIVE_NETLIFY_BASE}/.netlify/functions/aiChat`
+          : '/.netlify/functions/aiChat';
+
+      const response = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          isReturningVisitor,
-          customerName,
-          customerMobile,
-          deviceInfo: `${silentDevice.platform} | Bat: ${silentDevice.batteryText.slice(0, 35)} | Net: ${silentDevice.networkText}`,
-          clientDevice: silentDevice,
-          clientCart: {
-            items: cartItems.map((i) => ({
-              key: i.key,
-              name: i.name,
-              price: i.price,
-              qty: i.qty,
-              variant: i.variant || ''
-            })),
-            totalQty,
-            grandTotal,
-            orderType
-          },
-          recentViewedDishes,
-          message: trimmed,
-          history: historyPayload,
-          clientMenu: activeMenu,
-          clientOffers: liveOffersCache.length > 0 ? liveOffersCache : null,
-          pageContext: getFrontendWebsiteText()
-        })
+        body: JSON.stringify(requestPayload)
       });
 
+      const contentType = response.headers.get('content-type') || '';
+
+      // CASE 1: TRUE BACKEND SSE STREAM (`text/event-stream`) — Reads tokens live as Gemini generates them!
+      if (response.ok && contentType.includes('text/event-stream') && response.body) {
+        const botMsgId = 'bot-sse-' + Date.now();
+        setStreamingMsgId(botMsgId);
+        setIsLoading(false);
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: botMsgId,
+            sender: 'bot',
+            text: '',
+            recommendedItems: [],
+            whatsappOrderText: '',
+            isStreaming: true
+          }
+        ]);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let liveAccumulated = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const cleanLine = line.trim();
+            if (!cleanLine.startsWith('data:')) continue;
+            const jsonStr = cleanLine.slice(5).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const evt = JSON.parse(jsonStr);
+              if (evt.type === 'delta' && evt.text) {
+                liveAccumulated += evt.text;
+                const snapshot = liveAccumulated;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === botMsgId ? { ...m, text: snapshot } : m))
+                );
+              } else if (evt.type === 'done') {
+                const finalTxt = evt.reply || liveAccumulated;
+                setStreamingMsgId(null);
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === botMsgId
+                      ? {
+                          ...m,
+                          text: finalTxt,
+                          recommendedItems: Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
+                          whatsappOrderText: evt.whatsappOrderText || '',
+                          isStreaming: false
+                        }
+                      : m
+                  )
+                );
+                executeAiMetadataActions(evt);
+              }
+            } catch {}
+          }
+        }
+
+        setStreamingMsgId(null);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botMsgId ? { ...m, isStreaming: false } : m))
+        );
+        return;
+      }
+
+      // CASE 2: BUFFERED JSON RESPONSE FALLBACK
+      const data = response.ok && contentType.includes('application/json') ? await response.json() : null;
+
       if (data && data.reply) {
-        if (data.debugError) {
-          console.warn('[Laddu AI Backend Diagnostic]:', data.debugError);
-        }
-        if (data.supabaseStatus && !data.supabaseStatus.logged) {
-          console.warn('[Laddu AI Supabase Log Notice]:', data.supabaseStatus.reason);
-        }
-
-        if (data.detectedCustomerName && String(data.detectedCustomerName).trim()) {
-          try {
-            localStorage.setItem('ks_customer_name', String(data.detectedCustomerName).trim());
-          } catch {}
-        }
-
-        if (Array.isArray(data.autoAddItems) && data.autoAddItems.length > 0) {
-          data.autoAddItems.forEach((item) => {
-            handleAddToReduxCart(item, item.qty || 1);
-          });
-        }
-
-        if (Array.isArray(data.autoRemoveItems) && data.autoRemoveItems.length > 0) {
-          data.autoRemoveItems.forEach((rem) => {
-            handleRemoveFromReduxCart(rem.name, rem.qty || 99);
-          });
-        }
-
-        if (data.action === 'CLEAR_CART') {
-          dispatch(clearCart());
-          showToast('कार्ट खाली (0) कर दिया गया');
-        } else if (data.action === 'RESTORE_LAST_ORDER') {
-          dispatch(restoreLastOrder());
-          showToast('पिछला ऑर्डर वापस कार्ट में आ गया');
-        } else if (data.action === 'OPEN_CART') {
-          setTimeout(() => {
-            setIsOpen(false);
-            dispatch(toggleCart(true));
-          }, 900);
-        } else if (data.action === 'OPEN_CUSTOM_CAKE') {
-          setTimeout(() => {
-            setIsOpen(false);
-            dispatch(toggleCustomRequest(true));
-          }, 900);
-        }
-
-        // Stream the AI reply word-by-word!
-        streamBotReply({
+        executeAiMetadataActions(data);
+        streamBotReplyFallback({
           fullText: data.reply,
           recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
           whatsappOrderText: data.whatsappOrderText || ''
         });
-
-        if (Array.isArray(data.quickFollowUps) && data.quickFollowUps.length > 0) {
-          setChips(data.quickFollowUps);
-        }
       } else {
         const clock = getLocalISTClockSummary();
-        streamBotReply({
+        streamBotReplyFallback({
           fullText:
             `**क्षीर सागर के प्रमुख आइटम्स और रेट्स (${clock.shopStatusNote}):**\n\n` +
             activeMenu
@@ -827,7 +906,7 @@ const AIMitrModal = () => {
       }
     } catch (error) {
       console.warn('[Laddu AI Notice]:', error);
-      streamBotReply({
+      streamBotReplyFallback({
         fullText:
           `**क्षीर सागर के प्रमुख आइटम्स और रेट्स:**\n\n` +
           activeMenu
@@ -982,7 +1061,7 @@ const AIMitrModal = () => {
                 <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
                   {renderFormattedText(msg.text)}
 
-                  {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button (Shown once streaming finishes) */}
+                  {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button */}
                   {!isMsgStreaming && (
                     <div className="flex items-center gap-3 pt-0.5">
                       <button
@@ -1096,7 +1175,6 @@ const AIMitrModal = () => {
 
       {/* ================= 3. ULTRA-CLEAN BOTTOM INPUT DOCK ================= */}
       <footer className="flex-none px-3 sm:px-4 py-3 bg-white max-w-3xl w-full mx-auto">
-        {/* Transparent Follow-Up Prompts Bar */}
         <div
           className="flex items-center gap-2 overflow-x-auto pb-2.5 text-xs text-neutral-600"
           style={{ scrollbarWidth: 'none' }}

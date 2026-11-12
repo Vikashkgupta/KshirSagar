@@ -1,5 +1,5 @@
 // File: netlify/functions/aiChat.cjs
-// Laddu AI — Super-Smart Context-Aware Assistant for KshirSagar Sweets & Bakers + Full Supabase Sync + 5,000-Landmark Engine
+// Laddu AI — True Backend Token-by-Token SSE Streaming (`streamGenerateContent?alt=sse`) + Buffered Fallback
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -195,7 +195,6 @@ function getLiveISTClockAndShopStatus() {
   };
 }
 
-// Live Weather using exact KshirSagar coordinates (26.2373274, 84.1508169)
 async function getLiveMairwaWeather() {
   const now = Date.now();
   if (cachedWeather.text && now - cachedWeather.fetchedAt < 15 * 60 * 1000) {
@@ -478,16 +477,14 @@ function rankModel(name) {
   return 50;
 }
 
-async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
+async function getCandidateModels(apiKey) {
   const cleanKey = String(apiKey || "").trim();
-  const errors = [];
-
   if (!cachedDiscoveredModels) {
     try {
       const listRes = await fetchWithTimeout(
         "https://generativelanguage.googleapis.com/v1beta/models",
         { headers: { "x-goog-api-key": cleanKey } },
-        1500
+        1400
       );
       if (listRes.ok) {
         const listData = await listRes.json();
@@ -511,15 +508,18 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   let modelsToTry =
     cachedDiscoveredModels && cachedDiscoveredModels.length > 0
       ? cachedDiscoveredModels
-      : [
-          "gemini-2.0-flash-lite",
-          "gemini-2.0-flash",
-          "gemini-flash-lite-latest"
-        ];
+      : ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-lite-latest"];
 
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
   }
+  return modelsToTry;
+}
+
+async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
+  const cleanKey = String(apiKey || "").trim();
+  const errors = [];
+  const modelsToTry = await getCandidateModels(cleanKey);
 
   for (const modelName of modelsToTry.slice(0, 2)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
@@ -564,6 +564,49 @@ async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
   return { ok: false, errorText: errors.join(" | ") };
 }
 
+// Opens a TRUE token-by-token SSE stream from Gemini (`:streamGenerateContent?alt=sse`)
+async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
+  const cleanKey = String(apiKey || "").trim();
+  const modelsToTry = await getCandidateModels(cleanKey);
+  const errors = [];
+
+  for (const modelName of modelsToTry.slice(0, 2)) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse`;
+    try {
+      const res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": cleanKey
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents,
+            generationConfig: {
+              temperature: 0.5
+            }
+          })
+        },
+        5500
+      );
+
+      if (res.ok && res.body) {
+        cachedWorkingModel = modelName;
+        return { ok: true, response: res, modelUsed: modelName };
+      } else {
+        const errTxt = await res.text();
+        errors.push(`${modelName}(${res.status}): ${errTxt.slice(0, 90)}`);
+        if (cachedWorkingModel === modelName) cachedWorkingModel = null;
+      }
+    } catch (err) {
+      errors.push(`${modelName}: ${err.message}`);
+    }
+  }
+  return { ok: false, errorText: errors.join(" | ") };
+}
+
 function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherInfo, clientCart, clientDevice, locationStr, matchedLandmarks, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
@@ -582,7 +625,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
     };
   }
 
-  // If the user mentioned a matched village/landmark from mairwaLandmarks.cjs!
   if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) {
     const top = matchedLandmarks[0];
     return {
@@ -704,7 +746,181 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
   };
 }
 
-exports.handler = async (event) => {
+function buildCoreContextBlock({
+  clockInfo,
+  weatherInfo,
+  rememberedName,
+  isReturningVisitor,
+  existingSupabaseRow,
+  rememberedMobile,
+  clientCart,
+  recentViewedDishes,
+  clientDevice,
+  deviceInfo,
+  locationStr,
+  matchedLandmarks,
+  activeMenu,
+  activeOffers
+}) {
+  return `
+You are "Laddu AI", the official intelligent assistant of KshirSagar Sweets & Bakers (https://kshirsagarsweets.netlify.app/).
+Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is always "Laddu AI".
+
+YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
+
+CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
+- The user can ask you ANYTHING in the world: casual conversation, math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
+- For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in metadata.
+
+CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & HYPER-LOCAL MAIRWA EXPERT:
+Use the exact real-time context provided below whenever relevant:
+
+=== 1. LIVE INDIAN CLOCK, DATE & SHOP COUNTDOWN ===
+- Current IST Time: ${clockInfo.formattedTime}
+- Current IST Date & Day: ${clockInfo.formattedDate}
+- Live Shop Status: ${clockInfo.shopStatusNote}
+- Live Delivery Status: ${clockInfo.deliveryStatusNote}
+- Current Time-of-Day Craving Mood: ${clockInfo.timeMood}
+
+=== 2. LIVE MAIRWA WEATHER & SEASON SENSE ===
+- ${weatherInfo}
+
+=== 3. USER'S LIVE SHOPPING CART & IDENTITY ===
+- Customer Name: ${rememberedName} (${isReturningVisitor || existingSupabaseRow ? "Returning Visitor with saved Supabase history" : "First-Time Visitor"})
+- Customer Mobile: ${rememberedMobile || "Not entered yet"}
+- Selected Order Type: ${clientCart.orderType || "Delivery"}
+- Current Cart Items (${clientCart.totalQty || 0} items, Total Bill: ₹${clientCart.grandTotal || 0}): ${
+    Array.isArray(clientCart.items) && clientCart.items.length > 0
+      ? JSON.stringify(clientCart.items)
+      : "Cart is currently empty (0 items)"
+  }
+- Recently Viewed Dishes on Website: ${recentViewedDishes.length > 0 ? recentViewedDishes.join(", ") : "None yet"}
+
+=== 4. USER'S DEVICE, BATTERY, NETWORK & LOCATION CONTEXT ===
+- Device & Browser: ${clientDevice.platform || deviceInfo}
+- Battery Status: ${clientDevice.batteryText || "Not reported by browser"}
+- Network Connection: ${clientDevice.networkText || "Online"}
+- User Location / Region: ${locationStr}
+
+=== 5. OFFICIAL STORE PINPOINT LOCATION & MATCHED LOCAL LANDMARKS ===
+- Exact Store Address: "Nai Bazar, Mairwa, Bihar 841239" (Plus Code: "65P2+W8 Mairwa, Bihar", Exact Coordinates: 26.2373274° N, 84.1508169° E).
+- Official Google Maps Link: ${STORE_PROFILE.googleMapsUrl}
+- IMPORTANT: Never mention Power House or Electric Office—the address is strictly "Nai Bazar, Mairwa, Bihar 841239".
+- Matched Landmarks from User's Query: ${
+    matchedLandmarks.length > 0
+      ? JSON.stringify(matchedLandmarks)
+      : "No specific village/landmark name in this message; use general Mairwa store location if asked."
+  }
+  (Whenever a landmark/village is matched above, state its exact "roadKm" distance, "timeMins" travel time, "direction", and "zone" from our Nai Bazar, Mairwa shop, and include the Google Maps link ${STORE_PROFILE.googleMapsUrl}!)
+
+=== 6. SMART HALWAI PORTION & PARTY CALCULATOR ===
+${JSON.stringify(HALWAI_PORTION_GUIDE)}
+
+=== 7. UPCOMING INDIAN FESTIVALS & CUSTOM CAKE ADVISOR ===
+- Festivals Guide: ${JSON.stringify(FESTIVAL_OCCASIONS_GUIDE)}
+- Custom Cake Advisor: For birthday/anniversary cakes, suggest Truffle Cake / Red Velvet Cake, give 3 short cake-top messages, and set "action": "OPEN_CUSTOM_CAKE" if they want to open the custom cake request form.
+
+=== 8. OFFICIAL WEBSITE, STORE DETAILS & CREATOR STORY ===
+${JSON.stringify(STORE_PROFILE)}
+
+=== 9. LIVE AIRTABLE MENU TABLE & ALTERNATIVE SUGGESTOR ===
+${JSON.stringify(
+  activeMenu.map((m) => ({
+    id: m.id,
+    name: m.name,
+    category: m.category,
+    price: m.price,
+    unit: m.unit || ""
+  }))
+)}
+
+=== 10. LIVE AIRTABLE OFFERS TABLE ===
+${JSON.stringify(activeOffers)}
+`;
+}
+
+function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName) {
+  const lowerMsg = String(userMessage || "").toLowerCase();
+  const actionVal = parsedMeta?.action || "NONE";
+  let finalAction = actionVal;
+
+  if (
+    finalAction !== "CLEAR_CART" &&
+    ((/\b(cart|कार्ट)\b/i.test(lowerMsg) && /\b(0|zero|clear|empty|khali|खाली|साफ़|साफ)\b/i.test(lowerMsg)) ||
+      lowerMsg.includes("cart 0") ||
+      lowerMsg.includes("clear cart"))
+  ) {
+    finalAction = "CLEAR_CART";
+  }
+
+  let matchedItems = [];
+  if (parsedMeta?.showFoodCards) {
+    const names = Array.isArray(parsedMeta.recommendedItemNames) ? parsedMeta.recommendedItemNames : [];
+    matchedItems = activeMenu.filter((item) =>
+      names.some(
+        (n) =>
+          item.name.toLowerCase().includes(String(n).toLowerCase()) ||
+          String(n).toLowerCase().includes(item.name.toLowerCase())
+      )
+    );
+    if (matchedItems.length === 0 && names.length > 0) {
+      matchedItems = activeMenu.slice(0, 3);
+    }
+  }
+
+  const resolvedAutoAdd = [];
+  if (Array.isArray(parsedMeta?.autoAddItems) && parsedMeta.autoAddItems.length > 0) {
+    parsedMeta.autoAddItems.forEach((reqItem) => {
+      const targetName = String(reqItem?.name || "").toLowerCase().trim();
+      if (!targetName) return;
+      const found = activeMenu.find(
+        (m) =>
+          m.name.toLowerCase() === targetName ||
+          m.name.toLowerCase().includes(targetName) ||
+          targetName.includes(m.name.toLowerCase())
+      );
+      if (found) {
+        resolvedAutoAdd.push({
+          ...found,
+          qty: Math.max(1, Math.min(20, Number(reqItem.qty || 1)))
+        });
+      }
+    });
+  }
+
+  const resolvedAutoRemove = Array.isArray(parsedMeta?.autoRemoveItems)
+    ? parsedMeta.autoRemoveItems
+        .filter((r) => r && r.name)
+        .map((r) => ({
+          name: String(r.name).trim(),
+          qty: Math.max(1, Number(r.qty || 1))
+        }))
+    : [];
+
+  const effectiveCustomerName =
+    parsedMeta?.detectedCustomerName && String(parsedMeta.detectedCustomerName).trim()
+      ? String(parsedMeta.detectedCustomerName).trim()
+      : rememberedName;
+
+  const quickFollowUps =
+    Array.isArray(parsedMeta?.quickFollowUps) && parsedMeta.quickFollowUps.length > 0
+      ? parsedMeta.quickFollowUps.slice(0, 4)
+      : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "✨ कुछ नया और रोचक बताओ"];
+
+  return {
+    recommendedItems: matchedItems.slice(0, 4),
+    autoAddItems: resolvedAutoAdd,
+    autoRemoveItems: resolvedAutoRemove,
+    action: finalAction,
+    whatsappOrderText: parsedMeta?.whatsappOrderText || "",
+    detectedCustomerName: effectiveCustomerName !== "Guest User" ? effectiveCustomerName : "",
+    effectiveCustomerName,
+    quickFollowUps
+  };
+}
+
+// Standard buffered handler (always works as fallback and for GET / non-streaming requests)
+async function bufferedHandler(event) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
@@ -800,12 +1016,9 @@ exports.handler = async (event) => {
     const clientDevice = body.clientDevice || {};
     const recentViewedDishes = Array.isArray(body.recentViewedDishes) ? body.recentViewedDishes : [];
     const isReturningVisitor = Boolean(body.isReturningVisitor);
-    const pageContext = String(body.pageContext || "").slice(0, 1500);
 
     const clockInfo = getLiveISTClockAndShopStatus();
     const locationStr = extractUserLocationContext(event.headers, clientDevice);
-
-    // 0.5ms Instant Search across our Mairwa Landmarks & Aliases database (`mairwaLandmarks.cjs`)!
     const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
 
     const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
@@ -881,95 +1094,24 @@ exports.handler = async (event) => {
       };
     }
 
-    const systemInstruction = `
-You are "Laddu AI", the official intelligent assistant of KshirSagar Sweets & Bakers (https://kshirsagarsweets.netlify.app/).
-Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is always "Laddu AI".
+    const coreContext = buildCoreContextBlock({
+      clockInfo,
+      weatherInfo,
+      rememberedName,
+      isReturningVisitor,
+      existingSupabaseRow,
+      rememberedMobile,
+      clientCart,
+      recentViewedDishes,
+      clientDevice,
+      deviceInfo,
+      locationStr,
+      matchedLandmarks,
+      activeMenu,
+      activeOffers
+    });
 
-YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
-
-CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
-- The user can ask you ANYTHING in the world: casual conversation, math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
-- For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in your JSON output.
-
-CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & HYPER-LOCAL MAIRWA EXPERT:
-Use the exact real-time context provided below whenever relevant:
-
-=== 1. LIVE INDIAN CLOCK, DATE & SHOP COUNTDOWN (Features #1, #2, #3) ===
-- Current IST Time: ${clockInfo.formattedTime}
-- Current IST Date & Day: ${clockInfo.formattedDate}
-- Live Shop Status: ${clockInfo.shopStatusNote}
-- Live Delivery Status: ${clockInfo.deliveryStatusNote}
-- Current Time-of-Day Craving Mood: ${clockInfo.timeMood}
-
-=== 2. LIVE MAIRWA WEATHER & SEASON SENSE (Feature #10) ===
-- ${weatherInfo}
-
-=== 3. USER'S LIVE SHOPPING CART & IDENTITY (Features #4, #5, #15) ===
-- Customer Name: ${rememberedName} (${isReturningVisitor || existingSupabaseRow ? "Returning Visitor with saved Supabase history" : "First-Time Visitor"})
-- Customer Mobile: ${rememberedMobile || "Not entered yet"}
-- Selected Order Type: ${clientCart.orderType || "Delivery"}
-- Current Cart Items (${clientCart.totalQty || 0} items, Total Bill: ₹${clientCart.grandTotal || 0}): ${
-      Array.isArray(clientCart.items) && clientCart.items.length > 0
-        ? JSON.stringify(clientCart.items)
-        : "Cart is currently empty (0 items)"
-    }
-- Recently Viewed Dishes on Website: ${recentViewedDishes.length > 0 ? recentViewedDishes.join(", ") : "None yet"}
-
-=== 4. USER'S DEVICE, BATTERY, NETWORK & LOCATION CONTEXT (Feature #8 Complete) ===
-- Device & Browser: ${clientDevice.platform || deviceInfo}
-- Battery Status: ${clientDevice.batteryText || "Not reported by browser"}
-- Network Connection: ${clientDevice.networkText || "Online"}
-- User Location / Region: ${locationStr}
-
-=== 5. OFFICIAL STORE PINPOINT LOCATION & MATCHED LOCAL LANDMARKS (Feature #9 — 0.5ms Lookup Engine) ===
-- Exact Store Address: "Nai Bazar, Mairwa, Bihar 841239" (Plus Code: "65P2+W8 Mairwa, Bihar", Exact Coordinates: 26.2373274° N, 84.1508169° E).
-- Official Google Maps Link: ${STORE_PROFILE.googleMapsUrl}
-- IMPORTANT: Never mention Power House or Electric Office—the address is strictly "Nai Bazar, Mairwa, Bihar 841239".
-- Matched Landmarks from User's Query (from our Mairwa-Siwan Landmark Database): ${
-      matchedLandmarks.length > 0
-        ? JSON.stringify(matchedLandmarks)
-        : "No specific village/landmark name in this message; use general Mairwa store location if asked."
-    }
-  (Whenever a landmark/village is matched above, state its exact "roadKm" distance, "timeMins" travel time, "direction", and "zone" from our Nai Bazar, Mairwa shop, and include the Google Maps link ${STORE_PROFILE.googleMapsUrl}!)
-
-=== 6. SMART HALWAI PORTION & PARTY CALCULATOR (Feature #12) ===
-${JSON.stringify(HALWAI_PORTION_GUIDE)}
-
-=== 7. UPCOMING INDIAN FESTIVALS & CUSTOM CAKE ADVISOR (Features #6 & #16) ===
-- Festivals Guide: ${JSON.stringify(FESTIVAL_OCCASIONS_GUIDE)}
-- Custom Cake Advisor (#16): For birthday/anniversary cakes, suggest Truffle Cake / Red Velvet Cake, give 3 short cake-top messages, and set "action": "OPEN_CUSTOM_CAKE" if they want to open the custom cake request form.
-
-=== 8. OFFICIAL WEBSITE, STORE DETAILS & CREATOR STORY (Feature #18) ===
-${JSON.stringify(STORE_PROFILE)}
-
-=== 9. LIVE AIRTABLE MENU TABLE & ALTERNATIVE SUGGESTOR (Feature #14) ===
-${JSON.stringify(
-  activeMenu.map((m) => ({
-    id: m.id,
-    name: m.name,
-    category: m.category,
-    price: m.price,
-    unit: m.unit || ""
-  }))
-)}
-
-=== 10. LIVE AIRTABLE OFFERS TABLE ===
-${JSON.stringify(activeOffers)}
-
-=== 11. FULL CART CONTROL: ADD, REMOVE, CLEAR & WHATSAPP ORDER (Features #7 & #13) ===
-CRITICAL CART RULES — YOU MUST SET THESE JSON FIELDS WHENEVER THE USER ASKS TO MODIFY THEIR CART:
-1. CLEAR / EMPTY ENTIRE CART: If the user asks to empty, clear, or set their cart to 0 (e.g. "Cart 0 kr do", "Cart khali kr do", "Sab hata do", "Clear cart"), you MUST set:
-   "action": "CLEAR_CART"
-2. REMOVE / DECREASE SPECIFIC ITEMS FROM CART: If the user asks to remove or reduce specific item(s) from their cart (e.g. "Rasmalai hata do", "1 Gulab Jamun kam kr do", "Remove pizza from cart"), you MUST populate:
-   "autoRemoveItems": [{"name": "Exact Item Name from Current Cart", "qty": 99}]
-3. ADD ITEMS TO CART: If the user asks to add item(s) to their cart (e.g. "2 Rasmalai cart me daal do"), you MUST populate:
-   "autoAddItems": [{"name": "Exact Menu Item Name", "qty": 2}]
-4. RESTORE LAST ORDER: If the user asks to restore their previous/last cleared cart, set:
-   "action": "RESTORE_LAST_ORDER"
-5. OPEN CART MODAL: If the user asks to view/open their cart UI, set:
-   "action": "OPEN_CART"
-6. WHATSAPP DIRECT ORDER: If the user asks for a WhatsApp order link or has items in their cart they want to order on WhatsApp, populate "whatsappOrderText".
-
+    const systemInstruction = `${coreContext}
 === OUTPUT FORMAT RULES ===
 Return STRICT JSON matching this exact schema (no markdown code fences):
 {
@@ -1040,88 +1182,21 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
     try {
       parsed = JSON.parse(rawText);
     } catch {
-      parsed = {
-        reply: rawText,
-        showFoodCards: false,
-        recommendedItemNames: [],
-        autoAddItems: [],
-        autoRemoveItems: [],
-        action: "NONE",
-        whatsappOrderText: "",
-        detectedCustomerName: "",
-        quickFollowUps: []
-      };
-    }
-
-    const lowerMsg = userMessage.toLowerCase();
-    if (
-      parsed.action !== "CLEAR_CART" &&
-      ((/\b(cart|कार्ट)\b/i.test(lowerMsg) && /\b(0|zero|clear|empty|khali|खाली|साफ़|साफ)\b/i.test(lowerMsg)) ||
-        lowerMsg.includes("cart 0") ||
-        lowerMsg.includes("clear cart"))
-    ) {
-      parsed.action = "CLEAR_CART";
+      parsed = { reply: rawText };
     }
 
     const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
-    const effectiveCustomerName =
-      parsed.detectedCustomerName && String(parsed.detectedCustomerName).trim()
-        ? String(parsed.detectedCustomerName).trim()
-        : rememberedName;
+    const resolvedMeta = resolveMetadataPayload(parsed, userMessage, activeMenu, rememberedName);
 
     const supabaseStatus = await saveSessionToSupabase({
       existingRow: existingSupabaseRow,
       sessionId,
-      customerName: effectiveCustomerName,
+      customerName: resolvedMeta.effectiveCustomerName,
       customerMobile: rememberedMobile,
       deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
       userMessage,
       aiReply: finalReply
     });
-
-    let matchedItems = [];
-    if (parsed.showFoodCards) {
-      const names = Array.isArray(parsed.recommendedItemNames) ? parsed.recommendedItemNames : [];
-      matchedItems = activeMenu.filter((item) =>
-        names.some(
-          (n) =>
-            item.name.toLowerCase().includes(String(n).toLowerCase()) ||
-            String(n).toLowerCase().includes(item.name.toLowerCase())
-        )
-      );
-      if (matchedItems.length === 0 && names.length > 0) {
-        matchedItems = activeMenu.slice(0, 3);
-      }
-    }
-
-    const resolvedAutoAdd = [];
-    if (Array.isArray(parsed.autoAddItems) && parsed.autoAddItems.length > 0) {
-      parsed.autoAddItems.forEach((reqItem) => {
-        const targetName = String(reqItem?.name || "").toLowerCase().trim();
-        if (!targetName) return;
-        const found = activeMenu.find(
-          (m) =>
-            m.name.toLowerCase() === targetName ||
-            m.name.toLowerCase().includes(targetName) ||
-            targetName.includes(m.name.toLowerCase())
-        );
-        if (found) {
-          resolvedAutoAdd.push({
-            ...found,
-            qty: Math.max(1, Math.min(20, Number(reqItem.qty || 1)))
-          });
-        }
-      });
-    }
-
-    const resolvedAutoRemove = Array.isArray(parsed.autoRemoveItems)
-      ? parsed.autoRemoveItems
-          .filter((r) => r && r.name)
-          .map((r) => ({
-            name: String(r.name).trim(),
-            qty: Math.max(1, Number(r.qty || 1))
-          }))
-      : [];
 
     return {
       statusCode: 200,
@@ -1134,16 +1209,13 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
         supabaseStatus,
         matchedLandmarks,
         reply: finalReply,
-        recommendedItems: matchedItems.slice(0, 4),
-        autoAddItems: resolvedAutoAdd,
-        autoRemoveItems: resolvedAutoRemove,
-        action: parsed.action || "NONE",
-        whatsappOrderText: parsed.whatsappOrderText || "",
-        detectedCustomerName: effectiveCustomerName !== "Guest User" ? effectiveCustomerName : "",
-        quickFollowUps:
-          Array.isArray(parsed.quickFollowUps) && parsed.quickFollowUps.length > 0
-            ? parsed.quickFollowUps.slice(0, 4)
-            : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "✨ कुछ नया और रोचक बताओ"]
+        recommendedItems: resolvedMeta.recommendedItems,
+        autoAddItems: resolvedMeta.autoAddItems,
+        autoRemoveItems: resolvedMeta.autoRemoveItems,
+        action: resolvedMeta.action,
+        whatsappOrderText: resolvedMeta.whatsappOrderText,
+        detectedCustomerName: resolvedMeta.detectedCustomerName,
+        quickFollowUps: resolvedMeta.quickFollowUps
       })
     };
   } catch (err) {
@@ -1159,4 +1231,253 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
       })
     };
   }
-};
+}
+
+// TRUE AWS Lambda / Netlify Response Streaming Handler (`awslambda.streamifyResponse`)
+// When `awslambda.streamifyResponse` is available on Netlify's runtime and the client passes `"stream": true`,
+// tokens are flushed straight from Gemini's `:streamGenerateContent?alt=sse` to the browser in real time!
+if (typeof globalThis.awslambda !== "undefined" && typeof globalThis.awslambda.streamifyResponse === "function") {
+  exports.handler = globalThis.awslambda.streamifyResponse(async (event, responseStream, context) => {
+    const writeBufferedResult = async () => {
+      const res = await bufferedHandler(event);
+      const httpStream = globalThis.awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: res.statusCode || 200,
+        headers: res.headers || { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+      httpStream.write(res.body || "");
+      httpStream.end();
+    };
+
+    if (event.httpMethod !== "POST") {
+      await writeBufferedResult();
+      return;
+    }
+
+    let body = {};
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch {}
+
+    if (!body.stream) {
+      await writeBufferedResult();
+      return;
+    }
+
+    const geminiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
+
+    if (!geminiKey) {
+      await writeBufferedResult();
+      return;
+    }
+
+    try {
+      const userMessage = (body.message || "").trim();
+      const sessionId = String(body.sessionId || "KS-GUEST").trim();
+      const customerName = String(body.customerName || "Guest User").trim();
+      const customerMobile = String(body.customerMobile || "").trim();
+      const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 160);
+      const clientHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
+      const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
+      const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
+      const clientCart = body.clientCart || { items: [], totalQty: 0, grandTotal: 0, orderType: "Delivery" };
+      const clientDevice = body.clientDevice || {};
+      const recentViewedDishes = Array.isArray(body.recentViewedDishes) ? body.recentViewedDishes : [];
+      const isReturningVisitor = Boolean(body.isReturningVisitor);
+
+      const clockInfo = getLiveISTClockAndShopStatus();
+      const locationStr = extractUserLocationContext(event.headers, clientDevice);
+      const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
+
+      const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
+        clientMenu
+          ? Promise.resolve({ menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" })
+          : fetchLiveAirtableData(process.env.AIRTABLE_BASE_ID, process.env.AIRTABLE_API_KEY),
+        getLiveMairwaWeather(),
+        fetchSessionFromSupabase(sessionId)
+      ]);
+
+      const activeMenu = clientMenu || liveData.menu;
+      const activeOffers = clientOffers || liveData.offers;
+
+      let mergedHistory = clientHistory;
+      if (
+        existingSupabaseRow &&
+        Array.isArray(existingSupabaseRow.conversation) &&
+        existingSupabaseRow.conversation.length > 0
+      ) {
+        const dbHistory = existingSupabaseRow.conversation.slice(-12).map((turn) => ({
+          role: turn.role === "ai" ? "assistant" : "user",
+          content: String(turn.text || "")
+        }));
+        if (dbHistory.length >= clientHistory.length) {
+          mergedHistory = dbHistory;
+        }
+      }
+
+      const rememberedName =
+        customerName !== "Guest User"
+          ? customerName
+          : existingSupabaseRow?.customer_name || "Guest User";
+      const rememberedMobile =
+        customerMobile || existingSupabaseRow?.customer_mobile || "";
+
+      const coreContext = buildCoreContextBlock({
+        clockInfo,
+        weatherInfo,
+        rememberedName,
+        isReturningVisitor,
+        existingSupabaseRow,
+        rememberedMobile,
+        clientCart,
+        recentViewedDishes,
+        clientDevice,
+        deviceInfo,
+        locationStr,
+        matchedLandmarks,
+        activeMenu,
+        activeOffers
+      });
+
+      // Two-Part Streaming Prompt: Natural markdown reply streams first, followed by `---METADATA---` and single-line JSON!
+      const streamingSystemInstruction = `${coreContext}
+=== STREAMING OUTPUT FORMAT (MANDATORY) ===
+1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
+2. At the very end of your response, on a new line, output the exact delimiter:
+---METADATA---
+followed immediately by a single-line JSON object for cart actions, food cards, and follow-ups matching this schema:
+{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","whatsappOrderText":"","detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
+`;
+
+      const contents = [
+        ...mergedHistory.map((msg) => ({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: String(msg.content || "") }]
+        })),
+        {
+          role: "user",
+          parts: [{ text: userMessage || "Namaste!" }]
+        }
+      ];
+
+      const sseResult = await openGeminiSSEStream(geminiKey, streamingSystemInstruction, contents);
+      if (!sseResult.ok) {
+        await writeBufferedResult();
+        return;
+      }
+
+      const httpStream = globalThis.awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+
+      const reader = sseResult.response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let sseBuffer = "";
+      let accumulatedRaw = "";
+      let sentLength = 0;
+      const DELIMITER = "---METADATA---";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine.startsWith("data:")) continue;
+          const jsonStr = trimmedLine.slice(5).trim();
+          if (!jsonStr || jsonStr === "[DONE]") continue;
+
+          try {
+            const chunkObj = JSON.parse(jsonStr);
+            const piece = chunkObj?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (piece) {
+              accumulatedRaw += piece;
+
+              // Stream only the reply portion before `---METADATA---`
+              const delimIdx = accumulatedRaw.indexOf(DELIMITER);
+              const safeEnd =
+                delimIdx !== -1
+                  ? delimIdx
+                  : Math.max(0, accumulatedRaw.length - DELIMITER.length);
+
+              if (safeEnd > sentLength) {
+                const delta = accumulatedRaw.slice(sentLength, safeEnd);
+                sentLength = safeEnd;
+                httpStream.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // Final flush after stream completes
+      let finalReplyText = accumulatedRaw;
+      let rawMetaJson = "{}";
+      const finalDelimIdx = accumulatedRaw.indexOf(DELIMITER);
+
+      if (finalDelimIdx !== -1) {
+        finalReplyText = accumulatedRaw.slice(0, finalDelimIdx).trim();
+        rawMetaJson = accumulatedRaw.slice(finalDelimIdx + DELIMITER.length).trim();
+      } else {
+        finalReplyText = accumulatedRaw.trim();
+      }
+
+      if (finalReplyText.length > sentLength) {
+        const remainingDelta = finalReplyText.slice(sentLength);
+        httpStream.write(`data: ${JSON.stringify({ type: "delta", text: remainingDelta })}\n\n`);
+      }
+
+      let parsedMeta = {};
+      try {
+        const cleanMeta = rawMetaJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        parsedMeta = JSON.parse(cleanMeta);
+      } catch {}
+
+      const resolvedMeta = resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName);
+
+      const supabaseStatus = await saveSessionToSupabase({
+        existingRow: existingSupabaseRow,
+        sessionId,
+        customerName: resolvedMeta.effectiveCustomerName,
+        customerMobile: rememberedMobile,
+        deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
+        userMessage,
+        aiReply: finalReplyText || "मैं आपकी कैसे मदद कर सकता हूँ?"
+      });
+
+      httpStream.write(
+        `data: ${JSON.stringify({
+          type: "done",
+          reply: finalReplyText,
+          modelUsed: sseResult.modelUsed,
+          supabaseStatus,
+          matchedLandmarks,
+          recommendedItems: resolvedMeta.recommendedItems,
+          autoAddItems: resolvedMeta.autoAddItems,
+          autoRemoveItems: resolvedMeta.autoRemoveItems,
+          action: resolvedMeta.action,
+          whatsappOrderText: resolvedMeta.whatsappOrderText,
+          detectedCustomerName: resolvedMeta.detectedCustomerName,
+          quickFollowUps: resolvedMeta.quickFollowUps
+        })}\n\n`
+      );
+      httpStream.end();
+    } catch (err) {
+      await writeBufferedResult();
+    }
+  });
+} else {
+  exports.handler = bufferedHandler;
+}
