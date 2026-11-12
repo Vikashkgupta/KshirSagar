@@ -1,9 +1,11 @@
-// File: netlify/functions/aiChat.cjs
-// Laddu AI — True Backend Token-by-Token SSE Streaming (`streamGenerateContent?alt=sse`) + Buffered Fallback
-// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
-// Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
+// File: netlify/functions/aiChat.js
+// Laddu AI — True Netlify Functions v2 Web-Standard Streaming (`export default async (req, context) => new Response(ReadableStream)`)
+// Fixes the `502 Bad Gateway` caused by raw `awslambda.streamifyResponse` in v1 `.cjs` functions!
+// IMPORTANT: Delete the old `netlify/functions/aiChat.cjs` file so only `netlify/functions/aiChat.js` exists!
 
-const { SHOP_LOCATION, searchMairwaLandmarks } = require("./mairwaLandmarks.cjs");
+import mairwaLandmarksModule from "./mairwaLandmarks.cjs";
+
+const { searchMairwaLandmarks } = mairwaLandmarksModule;
 
 const SUPABASE_PROJECT_ID = "frltketibbthwqydnhls";
 const DEFAULT_SUPABASE_URL = "https://" + SUPABASE_PROJECT_ID + ".supabase.co";
@@ -97,25 +99,32 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
   }
 }
 
-function extractUserLocationContext(eventHeaders, clientDevice) {
+function extractUserLocationContext(reqHeaders, contextGeo, clientDevice) {
   let netlifyGeoStr = "";
   try {
-    const rawGeo = eventHeaders?.["x-nf-geo"] || eventHeaders?.["X-Nf-Geo"];
-    if (rawGeo) {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(rawGeo);
-      } catch {
-        parsed = JSON.parse(Buffer.from(rawGeo, "base64").toString("utf8"));
-      }
-      if (parsed) {
-        const parts = [
-          parsed.city,
-          parsed.subdivision?.name || parsed.subdivision?.code,
-          parsed.country?.name || parsed.country?.code
-        ].filter(Boolean);
-        if (parts.length > 0) {
-          netlifyGeoStr = parts.join(", ");
+    if (contextGeo && (contextGeo.city || contextGeo.subdivision)) {
+      const parts = [
+        contextGeo.city,
+        contextGeo.subdivision?.name || contextGeo.subdivision?.code,
+        contextGeo.country?.name || contextGeo.country?.code
+      ].filter(Boolean);
+      if (parts.length > 0) netlifyGeoStr = parts.join(", ");
+    } else {
+      const rawGeo = reqHeaders?.get ? reqHeaders.get("x-nf-geo") : reqHeaders?.["x-nf-geo"];
+      if (rawGeo) {
+        let parsed = null;
+        try {
+          parsed = JSON.parse(rawGeo);
+        } catch {
+          parsed = JSON.parse(Buffer.from(rawGeo, "base64").toString("utf8"));
+        }
+        if (parsed) {
+          const parts = [
+            parsed.city,
+            parsed.subdivision?.name || parsed.subdivision?.code,
+            parsed.country?.name || parsed.country?.code
+          ].filter(Boolean);
+          if (parts.length > 0) netlifyGeoStr = parts.join(", ");
         }
       }
     }
@@ -516,54 +525,6 @@ async function getCandidateModels(apiKey) {
   return modelsToTry;
 }
 
-async function callGeminiStudioAPI(apiKey, systemInstruction, contents) {
-  const cleanKey = String(apiKey || "").trim();
-  const errors = [];
-  const modelsToTry = await getCandidateModels(cleanKey);
-
-  for (const modelName of modelsToTry.slice(0, 2)) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-
-    try {
-      const res = await fetchWithTimeout(
-        endpoint,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": cleanKey
-          },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemInstruction }] },
-            contents,
-            generationConfig: {
-              temperature: 0.5,
-              responseMimeType: "application/json"
-            }
-          })
-        },
-        4200
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        cachedWorkingModel = modelName;
-        return { ok: true, data, modelUsed: modelName };
-      } else {
-        const errBody = await res.text();
-        errors.push(`${modelName}(${res.status}): ${errBody.slice(0, 90)}`);
-        if (cachedWorkingModel === modelName) {
-          cachedWorkingModel = null;
-        }
-      }
-    } catch (err) {
-      errors.push(`${modelName}: ${err.message}`);
-    }
-  }
-
-  return { ok: false, errorText: errors.join(" | ") };
-}
-
 // Opens a TRUE token-by-token SSE stream from Gemini (`:streamGenerateContent?alt=sse`)
 async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
@@ -698,33 +659,6 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
       whatsappOrderText: `Namaste KshirSagar! Mera Order:\n${items.map((i) => `- ${i.name} x ${i.qty} (₹${i.price * i.qty})`).join("\n")}\nTotal: ₹${clientCart.grandTotal}`,
       debugError: debugReason || null,
       quickFollowUps: ["🛒 मेरा कार्ट खोल दो", "🗑️ कार्ट खाली (0) कर दो"]
-    };
-  }
-
-  if (
-    lower.includes("address") ||
-    lower.includes("kahan") ||
-    lower.includes("number") ||
-    lower.includes("phone") ||
-    lower.includes("contact") ||
-    lower.includes("dukan") ||
-    lower.includes("shop") ||
-    lower.includes("mairwa") ||
-    lower.includes("खुलती") ||
-    lower.includes("कहाँ") ||
-    lower.includes("पता")
-  ) {
-    return {
-      reply:
-        `**${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
-        `• **पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
-        `• **समय:** ${STORE_PROFILE.timings} (${clockInfo.shopStatusNote})\n` +
-        `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}\n` +
-        `• **Google Maps:** ${STORE_PROFILE.googleMapsUrl}\n` +
-        `• **मोबाइल / WhatsApp:** ${STORE_PROFILE.phone}`,
-      recommendedItems: [],
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
   }
 
@@ -919,45 +853,47 @@ function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedN
   };
 }
 
-// Standard buffered handler (always works as fallback and for GET / non-streaming requests)
-async function bufferedHandler(event) {
-  const headers = {
+// ============================================================================
+// NETLIFY FUNCTIONS 2.0 WEB-STANDARD HANDLER (`export default async (req, context)`)
+// Supports native `new Response(ReadableStream)` for TRUE Token-by-Token SSE Streaming!
+// ============================================================================
+export default async (req, context) => {
+  const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Content-Type": "application/json"
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
   };
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "" };
+  if (req.method === "OPTIONS") {
+    return new Response("", { status: 200, headers: corsHeaders });
   }
 
-  if (event.httpMethod === "GET") {
+  // Handle GET requests (Session history sync & `/ai-chats.html` Admin Monitor)
+  if (req.method === "GET") {
     const { supabaseUrl, supabaseKey } = resolveSupabaseConfig();
 
     if (!supabaseKey) {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
+      return new Response(
+        JSON.stringify({
           success: false,
           sessions: [],
           message: "SUPABASE_ANON_KEY not set in Netlify Environment Variables."
-        })
-      };
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const querySessionId = event.queryStringParameters?.sessionId;
+    const urlObj = new URL(req.url);
+    const querySessionId = urlObj.searchParams.get("sessionId");
     if (querySessionId) {
       const sessionRow = await fetchSessionFromSupabase(querySessionId);
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
+      return new Response(
+        JSON.stringify({
           success: true,
           session: sessionRow || null
-        })
-      };
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     try {
@@ -972,43 +908,43 @@ async function bufferedHandler(event) {
 
       if (!res.ok) {
         const errText = await res.text();
-        return {
-          statusCode: 200,
-          headers,
-          body: JSON.stringify({
+        return new Response(
+          JSON.stringify({
             success: false,
             sessions: [],
             error: `Supabase GET ${res.status}: ${errText}`
-          })
-        };
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
       const sessions = await res.json();
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true, sessions })
-      };
+      return new Response(JSON.stringify({ success: true, sessions }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     } catch (err) {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: false, sessions: [], error: err.message })
-      };
+      return new Response(JSON.stringify({ success: false, sessions: [], error: err.message }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
   }
 
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
   }
 
   try {
-    const body = JSON.parse(event.body || "{}");
+    const body = await req.json();
     const userMessage = (body.message || "").trim();
     const sessionId = String(body.sessionId || "KS-GUEST").trim();
     const customerName = String(body.customerName || "Guest User").trim();
     const customerMobile = String(body.customerMobile || "").trim();
-    const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 160);
+    const deviceInfo = String(body.deviceInfo || req.headers.get("user-agent") || "Web").slice(0, 160);
     const clientHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
     const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
     const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
@@ -1018,7 +954,7 @@ async function bufferedHandler(event) {
     const isReturningVisitor = Boolean(body.isReturningVisitor);
 
     const clockInfo = getLiveISTClockAndShopStatus();
-    const locationStr = extractUserLocationContext(event.headers, clientDevice);
+    const locationStr = extractUserLocationContext(req.headers, context?.geo, clientDevice);
     const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
 
     const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
@@ -1081,17 +1017,16 @@ async function bufferedHandler(event) {
         userMessage,
         aiReply: fallbackResult.reply
       });
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
+      return new Response(
+        JSON.stringify({
           success: true,
           mode: "missing_env_key",
           dataSource: liveData.source,
           supabaseStatus,
           ...fallbackResult
-        })
-      };
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const coreContext = buildCoreContextBlock({
@@ -1111,20 +1046,13 @@ async function bufferedHandler(event) {
       activeOffers
     });
 
-    const systemInstruction = `${coreContext}
-=== OUTPUT FORMAT RULES ===
-Return STRICT JSON matching this exact schema (no markdown code fences):
-{
-  "reply": "Your complete, helpful markdown response",
-  "showFoodCards": true or false,
-  "recommendedItemNames": ["Exact Menu Item Name 1", "Exact Menu Item Name 2"],
-  "autoAddItems": [{"name": "Exact Menu Item Name", "qty": 1}],
-  "autoRemoveItems": [{"name": "Exact Cart Item Name", "qty": 1}],
-  "action": "NONE" or "CLEAR_CART" or "OPEN_CART" or "OPEN_CUSTOM_CAKE" or "RESTORE_LAST_ORDER",
-  "whatsappOrderText": "" or "Formatted order text for WhatsApp",
-  "detectedCustomerName": "" or "User's name if they introduced themselves",
-  "quickFollowUps": ["Relevant follow-up 1", "Relevant follow-up 2", "Relevant follow-up 3"]
-}
+    const streamingSystemInstruction = `${coreContext}
+=== STREAMING OUTPUT FORMAT (MANDATORY) ===
+1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
+2. At the very end of your response, on a new line, output the exact delimiter:
+---METADATA---
+followed immediately by a single-line JSON object for cart actions, food cards, and follow-ups matching this schema:
+{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","whatsappOrderText":"","detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
 `;
 
     const contents = [
@@ -1138,9 +1066,9 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
       }
     ];
 
-    const callResult = await callGeminiStudioAPI(geminiKey, systemInstruction, contents);
+    const sseResult = await openGeminiSSEStream(geminiKey, streamingSystemInstruction, contents);
 
-    if (!callResult.ok) {
+    if (!sseResult.ok) {
       const fallbackResult = buildSmartLocalFallback(
         userMessage,
         activeMenu,
@@ -1151,7 +1079,7 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
         clientDevice,
         locationStr,
         matchedLandmarks,
-        callResult.errorText
+        sseResult.errorText
       );
       const supabaseStatus = await saveSessionToSupabase({
         existingRow: existingSupabaseRow,
@@ -1162,322 +1090,158 @@ Return STRICT JSON matching this exact schema (no markdown code fences):
         userMessage,
         aiReply: fallbackResult.reply
       });
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
+      return new Response(
+        JSON.stringify({
           success: true,
           mode: "api_error_fallback",
           dataSource: liveData.source,
           supabaseStatus,
           ...fallbackResult
-        })
-      };
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    let rawText = callResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    rawText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder("utf-8");
+    const DELIMITER = "---METADATA---";
 
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      parsed = { reply: rawText };
-    }
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        const reader = sseResult.response.body.getReader();
+        let sseBuffer = "";
+        let accumulatedRaw = "";
+        let sentLength = 0;
 
-    const finalReply = parsed.reply || "मैं आपकी कैसे मदद कर सकता हूँ?";
-    const resolvedMeta = resolveMetadataPayload(parsed, userMessage, activeMenu, rememberedName);
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-    const supabaseStatus = await saveSessionToSupabase({
-      existingRow: existingSupabaseRow,
-      sessionId,
-      customerName: resolvedMeta.effectiveCustomerName,
-      customerMobile: rememberedMobile,
-      deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
-      userMessage,
-      aiReply: finalReply
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split("\n");
+            sseBuffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (!trimmedLine.startsWith("data:")) continue;
+              const jsonStr = trimmedLine.slice(5).trim();
+              if (!jsonStr || jsonStr === "[DONE]") continue;
+
+              try {
+                const chunkObj = JSON.parse(jsonStr);
+                const piece = chunkObj?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                if (piece) {
+                  accumulatedRaw += piece;
+
+                  const delimIdx = accumulatedRaw.indexOf(DELIMITER);
+                  const safeEnd =
+                    delimIdx !== -1
+                      ? delimIdx
+                      : Math.max(0, accumulatedRaw.length - DELIMITER.length);
+
+                  if (safeEnd > sentLength) {
+                    const delta = accumulatedRaw.slice(sentLength, safeEnd);
+                    sentLength = safeEnd;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`)
+                    );
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          let finalReplyText = accumulatedRaw;
+          let rawMetaJson = "{}";
+          const finalDelimIdx = accumulatedRaw.indexOf(DELIMITER);
+
+          if (finalDelimIdx !== -1) {
+            finalReplyText = accumulatedRaw.slice(0, finalDelimIdx).trim();
+            rawMetaJson = accumulatedRaw.slice(finalDelimIdx + DELIMITER.length).trim();
+          } else {
+            finalReplyText = accumulatedRaw.trim();
+          }
+
+          if (finalReplyText.length > sentLength) {
+            const remainingDelta = finalReplyText.slice(sentLength);
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "delta", text: remainingDelta })}\n\n`)
+            );
+          }
+
+          let parsedMeta = {};
+          try {
+            const cleanMeta = rawMetaJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+            parsedMeta = JSON.parse(cleanMeta);
+          } catch {}
+
+          const resolvedMeta = resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName);
+
+          const supabaseStatus = await saveSessionToSupabase({
+            existingRow: existingSupabaseRow,
+            sessionId,
+            customerName: resolvedMeta.effectiveCustomerName,
+            customerMobile: rememberedMobile,
+            deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
+            userMessage,
+            aiReply: finalReplyText || "मैं आपकी कैसे मदद कर सकता हूँ?"
+          });
+
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "done",
+                reply: finalReplyText,
+                modelUsed: sseResult.modelUsed,
+                supabaseStatus,
+                matchedLandmarks,
+                recommendedItems: resolvedMeta.recommendedItems,
+                autoAddItems: resolvedMeta.autoAddItems,
+                autoRemoveItems: resolvedMeta.autoRemoveItems,
+                action: resolvedMeta.action,
+                whatsappOrderText: resolvedMeta.whatsappOrderText,
+                detectedCustomerName: resolvedMeta.detectedCustomerName,
+                quickFollowUps: resolvedMeta.quickFollowUps
+              })}\n\n`
+            )
+          );
+          controller.close();
+        } catch (streamErr) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "done",
+                reply: accumulatedRaw || "माफ़ कीजिए, कनेक्शन में थोड़ी रुकावट आई।",
+                recommendedItems: [],
+                action: "NONE"
+              })}\n\n`
+            )
+          );
+          controller.close();
+        }
+      }
     });
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        success: true,
-        mode: "laddu_ai_live",
-        modelUsed: callResult.modelUsed,
-        dataSource: liveData.source,
-        supabaseStatus,
-        matchedLandmarks,
-        reply: finalReply,
-        recommendedItems: resolvedMeta.recommendedItems,
-        autoAddItems: resolvedMeta.autoAddItems,
-        autoRemoveItems: resolvedMeta.autoRemoveItems,
-        action: resolvedMeta.action,
-        whatsappOrderText: resolvedMeta.whatsappOrderText,
-        detectedCustomerName: resolvedMeta.detectedCustomerName,
-        quickFollowUps: resolvedMeta.quickFollowUps
-      })
-    };
+    return new Response(readableStream, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      }
+    });
   } catch (err) {
     const clockInfo = getLiveISTClockAndShopStatus();
     const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS, clockInfo, "", {}, {}, "Mairwa, Bihar", [], err.message);
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
+    return new Response(
+      JSON.stringify({
         success: true,
         mode: "error_recovery",
         ...fallbackResult
-      })
-    };
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
-}
-
-// TRUE AWS Lambda / Netlify Response Streaming Handler (`awslambda.streamifyResponse`)
-// When `awslambda.streamifyResponse` is available on Netlify's runtime and the client passes `"stream": true`,
-// tokens are flushed straight from Gemini's `:streamGenerateContent?alt=sse` to the browser in real time!
-if (typeof globalThis.awslambda !== "undefined" && typeof globalThis.awslambda.streamifyResponse === "function") {
-  exports.handler = globalThis.awslambda.streamifyResponse(async (event, responseStream, context) => {
-    const writeBufferedResult = async () => {
-      const res = await bufferedHandler(event);
-      const httpStream = globalThis.awslambda.HttpResponseStream.from(responseStream, {
-        statusCode: res.statusCode || 200,
-        headers: res.headers || { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-      });
-      httpStream.write(res.body || "");
-      httpStream.end();
-    };
-
-    if (event.httpMethod !== "POST") {
-      await writeBufferedResult();
-      return;
-    }
-
-    let body = {};
-    try {
-      body = JSON.parse(event.body || "{}");
-    } catch {}
-
-    if (!body.stream) {
-      await writeBufferedResult();
-      return;
-    }
-
-    const geminiKey =
-      process.env.GEMINI_API_KEY ||
-      process.env.VITE_GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY;
-
-    if (!geminiKey) {
-      await writeBufferedResult();
-      return;
-    }
-
-    try {
-      const userMessage = (body.message || "").trim();
-      const sessionId = String(body.sessionId || "KS-GUEST").trim();
-      const customerName = String(body.customerName || "Guest User").trim();
-      const customerMobile = String(body.customerMobile || "").trim();
-      const deviceInfo = String(body.deviceInfo || event.headers?.["user-agent"] || "Web").slice(0, 160);
-      const clientHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
-      const clientMenu = Array.isArray(body.clientMenu) && body.clientMenu.length > 0 ? body.clientMenu : null;
-      const clientOffers = Array.isArray(body.clientOffers) && body.clientOffers.length > 0 ? body.clientOffers : null;
-      const clientCart = body.clientCart || { items: [], totalQty: 0, grandTotal: 0, orderType: "Delivery" };
-      const clientDevice = body.clientDevice || {};
-      const recentViewedDishes = Array.isArray(body.recentViewedDishes) ? body.recentViewedDishes : [];
-      const isReturningVisitor = Boolean(body.isReturningVisitor);
-
-      const clockInfo = getLiveISTClockAndShopStatus();
-      const locationStr = extractUserLocationContext(event.headers, clientDevice);
-      const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
-
-      const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
-        clientMenu
-          ? Promise.resolve({ menu: clientMenu, offers: clientOffers || FALLBACK_OFFERS, source: "client_cache" })
-          : fetchLiveAirtableData(process.env.AIRTABLE_BASE_ID, process.env.AIRTABLE_API_KEY),
-        getLiveMairwaWeather(),
-        fetchSessionFromSupabase(sessionId)
-      ]);
-
-      const activeMenu = clientMenu || liveData.menu;
-      const activeOffers = clientOffers || liveData.offers;
-
-      let mergedHistory = clientHistory;
-      if (
-        existingSupabaseRow &&
-        Array.isArray(existingSupabaseRow.conversation) &&
-        existingSupabaseRow.conversation.length > 0
-      ) {
-        const dbHistory = existingSupabaseRow.conversation.slice(-12).map((turn) => ({
-          role: turn.role === "ai" ? "assistant" : "user",
-          content: String(turn.text || "")
-        }));
-        if (dbHistory.length >= clientHistory.length) {
-          mergedHistory = dbHistory;
-        }
-      }
-
-      const rememberedName =
-        customerName !== "Guest User"
-          ? customerName
-          : existingSupabaseRow?.customer_name || "Guest User";
-      const rememberedMobile =
-        customerMobile || existingSupabaseRow?.customer_mobile || "";
-
-      const coreContext = buildCoreContextBlock({
-        clockInfo,
-        weatherInfo,
-        rememberedName,
-        isReturningVisitor,
-        existingSupabaseRow,
-        rememberedMobile,
-        clientCart,
-        recentViewedDishes,
-        clientDevice,
-        deviceInfo,
-        locationStr,
-        matchedLandmarks,
-        activeMenu,
-        activeOffers
-      });
-
-      // Two-Part Streaming Prompt: Natural markdown reply streams first, followed by `---METADATA---` and single-line JSON!
-      const streamingSystemInstruction = `${coreContext}
-=== STREAMING OUTPUT FORMAT (MANDATORY) ===
-1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
-2. At the very end of your response, on a new line, output the exact delimiter:
----METADATA---
-followed immediately by a single-line JSON object for cart actions, food cards, and follow-ups matching this schema:
-{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","whatsappOrderText":"","detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
-`;
-
-      const contents = [
-        ...mergedHistory.map((msg) => ({
-          role: msg.role === "assistant" ? "model" : "user",
-          parts: [{ text: String(msg.content || "") }]
-        })),
-        {
-          role: "user",
-          parts: [{ text: userMessage || "Namaste!" }]
-        }
-      ];
-
-      const sseResult = await openGeminiSSEStream(geminiKey, streamingSystemInstruction, contents);
-      if (!sseResult.ok) {
-        await writeBufferedResult();
-        return;
-      }
-
-      const httpStream = globalThis.awslambda.HttpResponseStream.from(responseStream, {
-        statusCode: 200,
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-          "Access-Control-Allow-Origin": "*"
-        }
-      });
-
-      const reader = sseResult.response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let sseBuffer = "";
-      let accumulatedRaw = "";
-      let sentLength = 0;
-      const DELIMITER = "---METADATA---";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split("\n");
-        sseBuffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine.startsWith("data:")) continue;
-          const jsonStr = trimmedLine.slice(5).trim();
-          if (!jsonStr || jsonStr === "[DONE]") continue;
-
-          try {
-            const chunkObj = JSON.parse(jsonStr);
-            const piece = chunkObj?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (piece) {
-              accumulatedRaw += piece;
-
-              // Stream only the reply portion before `---METADATA---`
-              const delimIdx = accumulatedRaw.indexOf(DELIMITER);
-              const safeEnd =
-                delimIdx !== -1
-                  ? delimIdx
-                  : Math.max(0, accumulatedRaw.length - DELIMITER.length);
-
-              if (safeEnd > sentLength) {
-                const delta = accumulatedRaw.slice(sentLength, safeEnd);
-                sentLength = safeEnd;
-                httpStream.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
-              }
-            }
-          } catch {}
-        }
-      }
-
-      // Final flush after stream completes
-      let finalReplyText = accumulatedRaw;
-      let rawMetaJson = "{}";
-      const finalDelimIdx = accumulatedRaw.indexOf(DELIMITER);
-
-      if (finalDelimIdx !== -1) {
-        finalReplyText = accumulatedRaw.slice(0, finalDelimIdx).trim();
-        rawMetaJson = accumulatedRaw.slice(finalDelimIdx + DELIMITER.length).trim();
-      } else {
-        finalReplyText = accumulatedRaw.trim();
-      }
-
-      if (finalReplyText.length > sentLength) {
-        const remainingDelta = finalReplyText.slice(sentLength);
-        httpStream.write(`data: ${JSON.stringify({ type: "delta", text: remainingDelta })}\n\n`);
-      }
-
-      let parsedMeta = {};
-      try {
-        const cleanMeta = rawMetaJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-        parsedMeta = JSON.parse(cleanMeta);
-      } catch {}
-
-      const resolvedMeta = resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName);
-
-      const supabaseStatus = await saveSessionToSupabase({
-        existingRow: existingSupabaseRow,
-        sessionId,
-        customerName: resolvedMeta.effectiveCustomerName,
-        customerMobile: rememberedMobile,
-        deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
-        userMessage,
-        aiReply: finalReplyText || "मैं आपकी कैसे मदद कर सकता हूँ?"
-      });
-
-      httpStream.write(
-        `data: ${JSON.stringify({
-          type: "done",
-          reply: finalReplyText,
-          modelUsed: sseResult.modelUsed,
-          supabaseStatus,
-          matchedLandmarks,
-          recommendedItems: resolvedMeta.recommendedItems,
-          autoAddItems: resolvedMeta.autoAddItems,
-          autoRemoveItems: resolvedMeta.autoRemoveItems,
-          action: resolvedMeta.action,
-          whatsappOrderText: resolvedMeta.whatsappOrderText,
-          detectedCustomerName: resolvedMeta.detectedCustomerName,
-          quickFollowUps: resolvedMeta.quickFollowUps
-        })}\n\n`
-      );
-      httpStream.end();
-    } catch (err) {
-      await writeBufferedResult();
-    }
-  });
-} else {
-  exports.handler = bufferedHandler;
-}
+};
