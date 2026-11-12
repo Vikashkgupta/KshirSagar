@@ -1,5 +1,5 @@
 // File: netlify/functions/aiChat.js
-// Laddu AI — Clean Context-Gated Action Links + Honest Error Handling (No Menu Dumping on Errors!)
+// Laddu AI — Ultra-Reliable Streaming + Multi-Model Auto-Retry + Clean Conversation Normalization
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Shankar Shahi Market, Nai Bazar, Mairwa (Siwan) 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -474,7 +474,7 @@ function isSupportedTextModel(name) {
     n.includes("robotics") ||
     n.includes("thinking") ||
     n.includes("learnlm") ||
-    n.includes("2.5-flash") ||
+    n.includes("2.5-pro") ||
     n.includes("exp")
   ) {
     return false;
@@ -484,13 +484,14 @@ function isSupportedTextModel(name) {
 
 function rankModel(name) {
   const n = String(name || "").toLowerCase();
-  if (n.startsWith("gemini-3") && n.includes("flash-lite")) return 100;
-  if (n.startsWith("gemini-3") && n.includes("flash") && !n.includes("preview")) return 95;
-  if (n.startsWith("gemini-3") && n.includes("flash")) return 90;
-  if (n.startsWith("gemini-2.0-flash-lite")) return 85;
-  if (n.startsWith("gemini-2.0-flash")) return 80;
-  if (n === "gemini-flash-lite-latest") return 75;
-  if (n === "gemini-flash-latest") return 70;
+  if (n.startsWith("gemini-2.0-flash-lite")) return 100;
+  if (n.startsWith("gemini-2.0-flash")) return 95;
+  if (n === "gemini-flash-lite-latest") return 92;
+  if (n === "gemini-flash-latest") return 90;
+  if (n.startsWith("gemini-2.5-flash-lite")) return 88;
+  if (n.startsWith("gemini-3") && n.includes("flash-lite")) return 85;
+  if (n.startsWith("gemini-3") && n.includes("flash")) return 80;
+  if (n.startsWith("gemini-1.5-flash")) return 75;
   return 50;
 }
 
@@ -525,7 +526,12 @@ async function getCandidateModels(apiKey) {
   let modelsToTry =
     cachedDiscoveredModels && cachedDiscoveredModels.length > 0
       ? cachedDiscoveredModels
-      : ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-lite-latest"];
+      : [
+          "gemini-2.0-flash-lite",
+          "gemini-2.0-flash",
+          "gemini-flash-lite-latest",
+          "gemini-flash-latest"
+        ];
 
   if (cachedWorkingModel) {
     modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
@@ -533,13 +539,49 @@ async function getCandidateModels(apiKey) {
   return modelsToTry;
 }
 
-// Opens a TRUE token-by-token SSE stream from Gemini (`:streamGenerateContent?alt=sse`)
+// Normalizes conversation turns so Gemini API NEVER throws a 400 error due to:
+// 1) Leading 'model' greeting message (Welcome message in UI),
+// 2) Consecutive same-role messages, or
+// 3) Empty text parts.
+function buildValidGeminiContents(mergedHistory, userMessage) {
+  const cleaned = [];
+
+  for (const msg of mergedHistory) {
+    const role = msg.role === "assistant" || msg.role === "model" ? "model" : "user";
+    const text = String(msg.content || msg.text || "").trim();
+    if (!text) continue;
+    // Skip old fallback/error messages from polluting history
+    if (text.includes("Something went wrong") || text.includes("सर्वर से कनेक्ट होने में")) continue;
+
+    // Gemini requires the first turn in `contents` to be role: "user"
+    if (cleaned.length === 0 && role === "model") continue;
+
+    if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === role) {
+      cleaned[cleaned.length - 1].parts[0].text += "\n" + text;
+    } else {
+      cleaned.push({ role, parts: [{ text }] });
+    }
+  }
+
+  const finalUserText = String(userMessage || "Namaste!").trim();
+  if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === "user") {
+    if (cleaned[cleaned.length - 1].parts[0].text !== finalUserText) {
+      cleaned[cleaned.length - 1].parts[0].text += "\n" + finalUserText;
+    }
+  } else {
+    cleaned.push({ role: "user", parts: [{ text: finalUserText }] });
+  }
+
+  return cleaned;
+}
+
+// Opens a TRUE token-by-token SSE stream from Gemini (`:streamGenerateContent?alt=sse`) across up to 4 candidate models
 async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
   const cleanKey = String(apiKey || "").trim();
   const modelsToTry = await getCandidateModels(cleanKey);
   const errors = [];
 
-  for (const modelName of modelsToTry.slice(0, 2)) {
+  for (const modelName of modelsToTry.slice(0, 4)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse`;
     try {
       const res = await fetchWithTimeout(
@@ -558,7 +600,7 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
             }
           })
         },
-        6500
+        7500
       );
 
       if (res.ok && res.body) {
@@ -576,11 +618,43 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
   return { ok: false, errorText: errors.join(" | ") };
 }
 
-// ============================================================================
-// STRICT CONTEXT-GATED ACTION BUTTONS BUILDER (Never shows unwanted buttons!)
-// ============================================================================
-// Only allows a MAPS button if the user ACTUALLY asked about store location/route/address/village distance.
-// Only allows a WHATSAPP/CALL/CART/CAKE button when relevant to the user's message.
+// Secondary non-streaming rescue call if SSE endpoint was rate-limited on a model
+async function callGeminiBufferedRescue(apiKey, systemInstruction, contents) {
+  const cleanKey = String(apiKey || "").trim();
+  const modelsToTry = await getCandidateModels(cleanKey);
+
+  for (const modelName of modelsToTry.slice(0, 3)) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+    try {
+      const res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": cleanKey
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents,
+            generationConfig: { temperature: 0.5 }
+          })
+        },
+        6500
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (text) {
+          cachedWorkingModel = modelName;
+          return { ok: true, rawText: text, modelUsed: modelName };
+        }
+      }
+    } catch {}
+  }
+  return { ok: false };
+}
+
 function isStoreLocationOrRouteQuery(userMessage, matchedLandmarks) {
   const q = String(userMessage || "").toLowerCase();
   if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) return true;
@@ -627,7 +701,6 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
     const payload = String(item.payload || item.text || item.url || "").trim();
 
     if (type === "MAPS" || type === "DIRECTION" || type === "LOCATION") {
-      // STRICT GATE: Only include a MAPS button if the user actually asked about location, address, distance, or directions!
       if (!isLocationIntent) continue;
       addVerifiedButton({
         type: "MAPS",
@@ -697,11 +770,10 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
     }
   }
 
-  // If AI mentioned an external https:// URL in the reply text (e.g. "https://aktu.ac.in/") and didn't add a URL chip, extract it cleanly!
   if (finalButtons.length === 0 && aiReplyText) {
-    const urlMatches = String(aiReplyText).match(/https:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/[^\s),*"'<>]*)?/g);
+    const urlMatches = String(aiReplyText).match(/https:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/[^\s),*"'<>[\]]*)?/g);
     if (urlMatches && urlMatches.length > 0) {
-      const firstUrl = urlMatches[0].replace(/[.,;!?]+$/, "");
+      const firstUrl = urlMatches[0].replace(/[.,;!?\]>]+$/, "");
       if (!firstUrl.includes("kshirsagarsweets.netlify.app")) {
         let hostLabel = "वेबसाइट खोलें";
         try {
@@ -726,7 +798,6 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
     });
   }
 
-  // Only auto-attach a Maps button if the user genuinely asked about store location/route/landmark!
   if (finalButtons.length === 0 && isLocationIntent) {
     const landmarkName = matchedLandmarks?.[0]?.name?.split("(")?.[0]?.trim();
     addVerifiedButton({
@@ -742,13 +813,10 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
   return finalButtons.slice(0, 2);
 }
 
-// Handles deterministic instant actions (like Cart 0 / Clear Cart) or returns an honest `isError: true` response when AI API fails!
-// NEVER dumps Ghewar / Onion Pakoda menu on unrelated failed prompts!
 function buildHonestFallbackResponse(userMessage, clockInfo, clientCart, matchedLandmarks, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
-  // 1. Instant Cart Clear command always succeeds even if AI API is busy
   if (
     (/\b(cart|कार्ट)\b/i.test(lower) && /\b(0|zero|clear|empty|khali|hata|remove|delete|खाली|हटा)\b/i.test(lower)) ||
     lower.includes("cart 0") ||
@@ -765,10 +833,9 @@ function buildHonestFallbackResponse(userMessage, clockInfo, clientCart, matched
     };
   }
 
-  // 2. For ANY other query where the AI model failed or timed out, return an honest error state with a Retry button!
   return {
     isError: true,
-    reply: "⚠️ **Something went wrong!** अभी सर्वर से जवाब लाने में थोड़ी दिक्कत हुई। कृपया नीचे **Retry** दबाकर दोबारा कोशिश करें।",
+    reply: "Something went wrong, please try again.",
     recommendedItems: [],
     action: "NONE",
     actionButtons: [],
@@ -800,8 +867,8 @@ Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is alwa
 YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
 
 CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
-- The user can ask you ANYTHING in the world: universities (like AKTU), websites, coding, math, science, history, general knowledge, career advice, translations, or daily life questions.
-- CRITICAL: When the user asks a general question (not about KshirSagar food/store), answer ONLY their question directly. Do NOT mention sweets, cakes, or store directions, set "showFoodCards": false, "recommendedItemNames": [], and only include a "URL" actionButton if they asked for a website link!
+- The user can ask you ANYTHING in the world: universities (like AKTU), websites, coding, math, science, history, general knowledge, career advice, translations, casual chat (like "Sahi hai", "Thanks", "Ok"), or daily life questions.
+- CRITICAL: When the user asks a general question or makes a casual remark, answer naturally and concisely. Do NOT mention sweets, cakes, or store directions unless asked, set "showFoodCards": false, "recommendedItemNames": [], and NEVER write raw markdown links like [https://url](https://url)—write plain URLs like https://aktu.ac.in/ or [AKTU Official Website](https://aktu.ac.in/).
 
 CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & HYPER-LOCAL MAIRWA EXPERT:
 Use the exact real-time context provided below whenever relevant:
@@ -1089,7 +1156,7 @@ export default async (req, context) => {
       Array.isArray(existingSupabaseRow.conversation) &&
       existingSupabaseRow.conversation.length > 0
     ) {
-      const dbHistory = existingSupabaseRow.conversation.slice(-12).map((turn) => ({
+      const dbHistory = existingSupabaseRow.conversation.slice(-10).map((turn) => ({
         role: turn.role === "ai" ? "assistant" : "user",
         content: String(turn.text || "")
       }));
@@ -1145,6 +1212,7 @@ export default async (req, context) => {
       activeOffers
     });
 
+    const DELIMITER = "---METADATA---";
     const streamingSystemInstruction = `${coreContext}
 === STREAMING OUTPUT FORMAT (MANDATORY) ===
 1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
@@ -1154,20 +1222,68 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
 {"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","actionButtons":[],"detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
 `;
 
-    const contents = [
-      ...mergedHistory.map((msg) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: String(msg.content || "") }]
-      })),
-      {
-        role: "user",
-        parts: [{ text: userMessage || "Namaste!" }]
-      }
-    ];
+    // Normalized strictly-alternating `user`/`model` turns (fixes 400 Bad Request on follow-up messages!)
+    const contents = buildValidGeminiContents(mergedHistory, userMessage);
 
     const sseResult = await openGeminiSSEStream(geminiKey, streamingSystemInstruction, contents);
 
+    // If SSE stream failed across models, try one fast buffered rescue call before showing the error card!
     if (!sseResult.ok) {
+      const rescue = await callGeminiBufferedRescue(geminiKey, streamingSystemInstruction, contents);
+      if (rescue.ok && rescue.rawText) {
+        let finalReplyText = rescue.rawText;
+        let rawMetaJson = "{}";
+        const dIdx = rescue.rawText.indexOf(DELIMITER);
+        if (dIdx !== -1) {
+          finalReplyText = rescue.rawText.slice(0, dIdx).trim();
+          rawMetaJson = rescue.rawText.slice(dIdx + DELIMITER.length).trim();
+        }
+        let parsedMeta = {};
+        try {
+          const cleanMeta = rawMetaJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+          parsedMeta = JSON.parse(cleanMeta);
+        } catch {}
+
+        const resolvedMeta = resolveMetadataPayload(
+          parsedMeta,
+          userMessage,
+          activeMenu,
+          rememberedName,
+          matchedLandmarks,
+          clientCart,
+          finalReplyText
+        );
+
+        const supabaseStatus = await saveSessionToSupabase({
+          existingRow: existingSupabaseRow,
+          sessionId,
+          customerName: resolvedMeta.effectiveCustomerName,
+          customerMobile: rememberedMobile,
+          deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
+          userMessage,
+          aiReply: finalReplyText
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            isError: false,
+            mode: "buffered_rescue",
+            modelUsed: rescue.modelUsed,
+            supabaseStatus,
+            reply: finalReplyText,
+            recommendedItems: resolvedMeta.recommendedItems,
+            autoAddItems: resolvedMeta.autoAddItems,
+            autoRemoveItems: resolvedMeta.autoRemoveItems,
+            action: resolvedMeta.action,
+            actionButtons: resolvedMeta.actionButtons,
+            detectedCustomerName: resolvedMeta.detectedCustomerName,
+            quickFollowUps: resolvedMeta.quickFollowUps
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const fallbackResult = buildHonestFallbackResponse(
         userMessage,
         clockInfo,
@@ -1187,7 +1303,6 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
 
     const encoder = new TextEncoder();
     const decoder = new TextDecoder("utf-8");
-    const DELIMITER = "---METADATA---";
 
     const readableStream = new ReadableStream({
       async start(controller) {
@@ -1306,9 +1421,7 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
               `data: ${JSON.stringify({
                 type: "done",
                 isError: !accumulatedRaw,
-                reply:
-                  accumulatedRaw ||
-                  "⚠️ **Something went wrong!** कनेक्शन में थोड़ी रुकावट आई। कृपया नीचे **Retry** दबाकर दोबारा कोशिश करें।",
+                reply: accumulatedRaw || "Something went wrong, please try again.",
                 recommendedItems: [],
                 actionButtons: [],
                 action: "NONE"

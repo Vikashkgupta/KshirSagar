@@ -789,24 +789,45 @@ const AIMitrModal = () => {
     }
   };
 
-  // Renders formatted markdown + automatically turns any https:// URLs in the text into clickable links (like ChatGPT & Gemini!)
+  // Renders formatted markdown + cleanly parses both [Label](https://...) and bare https://... links without double brackets!
   const renderFormattedText = (rawText) => {
-    const html = String(rawText || '')
+    const savedLinks = [];
+    let html = String(rawText || '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
+      .replace(/>/g, '&gt;');
+
+    // 1. First extract markdown links `[Label](https://...)` into placeholders so bare-URL regex does not double-link them!
+    html = html.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      (_, label, url) => {
+        const cleanUrl = url.replace(/[.,;!?]+$/, '');
+        const id = savedLinks.length;
+        savedLinks.push(
+          `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline underline-offset-2 font-medium break-all">${label}</a>`
+        );
+        return `@@MDLINK_${id}@@`;
+      }
+    );
+
+    // 2. Link any remaining standalone https:// URLs
+    html = html.replace(
+      /(https?:\/\/[^\s<)"'\]]+)/g,
+      (url) => {
+        const cleanUrl = url.replace(/[.,;!?]+$/, '');
+        const trailing = url.slice(cleanUrl.length);
+        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline underline-offset-2 font-medium break-all">${cleanUrl}</a>${trailing}`;
+      }
+    );
+
+    // 3. Restore markdown link placeholders
+    html = html.replace(/@@MDLINK_(\d+)@@/g, (_, idx) => savedLinks[Number(idx)] || '');
+
+    html = html
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-neutral-900">$1</strong>')
       .replace(
         /`(.*?)`/g,
         '<code class="bg-neutral-100 text-neutral-800 px-1.5 py-0.5 rounded text-xs font-mono font-medium">$1</code>'
-      )
-      .replace(
-        /(https?:\/\/[^\s<)"']+)/g,
-        (url) => {
-          const cleanUrl = url.replace(/[.,;!?]+$/, '');
-          const trailing = url.slice(cleanUrl.length);
-          return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline underline-offset-2 font-medium break-all">${cleanUrl}</a>${trailing}`;
-        }
       )
       .replace(/\n\n/g, '</p><p class="mt-3">')
       .replace(/\n/g, '<br/>');
