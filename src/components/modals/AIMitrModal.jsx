@@ -1,5 +1,5 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — Final Complete Version
+// Laddu AI — Final Complete Version with Smooth ChatGPT-Style Word-by-Word Streaming + Blinking Cursor
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -213,13 +213,15 @@ const AIMitrModal = () => {
       sender: 'bot',
       text: INITIAL_WELCOME,
       recommendedItems: [],
-      whatsappOrderText: ''
+      whatsappOrderText: '',
+      isStreaming: false
     }
   ]);
   const [hasSyncedSupabase, setHasSyncedSupabase] = useState(false);
   const [userLocationText, setUserLocationText] = useState('');
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMsgId, setStreamingMsgId] = useState(null);
   const [chips, setChips] = useState(QUICK_PROMPTS);
   const [isListening, setIsListening] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
@@ -230,11 +232,85 @@ const AIMitrModal = () => {
   const [liveOffersCache, setLiveOffersCache] = useState([]);
   const [recentViewedDishes, setRecentViewedDishes] = useState([]);
   const [logoError, setLogoError] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const streamTimerRef = useRef(null);
 
   const canSend = input.trim().length > 0 && !isLoading;
 
+  // Cleanup streaming timer on unmount
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Smooth word-by-word ChatGPT-style streaming engine
+  const streamBotReply = ({ fullText, recommendedItems = [], whatsappOrderText = '' }) => {
+    if (streamTimerRef.current) {
+      clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+
+    const msgId = 'bot-' + Date.now();
+    const safeFull = String(fullText || '');
+    // Split into small token chunks (preserving spaces & newlines)
+    const tokens = safeFull.match(/\S+\s*|\n+/g) || [safeFull];
+
+    // Adaptive chunk size so short answers stream gently and long answers finish in ~1.8s
+    const stepSize = tokens.length > 140 ? 4 : tokens.length > 70 ? 2 : 1;
+    let index = 0;
+
+    setStreamingMsgId(msgId);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: msgId,
+        sender: 'bot',
+        text: tokens.slice(0, stepSize).join(''),
+        recommendedItems: [],
+        whatsappOrderText: '',
+        isStreaming: true
+      }
+    ]);
+    index = stepSize;
+
+    streamTimerRef.current = setInterval(() => {
+      index += stepSize;
+      if (index >= tokens.length) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+        setStreamingMsgId(null);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? {
+                  ...m,
+                  text: safeFull,
+                  recommendedItems,
+                  whatsappOrderText,
+                  isStreaming: false
+                }
+              : m
+          )
+        );
+      } else {
+        const partial = tokens.slice(0, index).join('');
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, text: partial } : m))
+        );
+      }
+    }, 24);
+  };
+
   const handleClearScreenChat = (toastMessage = 'चैट साफ़ कर दी गई') => {
+    if (streamTimerRef.current) {
+      clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+    setStreamingMsgId(null);
     try {
       localStorage.setItem('ks_chat_cleared_at', new Date().toISOString());
     } catch {}
@@ -244,7 +320,8 @@ const AIMitrModal = () => {
         sender: 'bot',
         text: INITIAL_WELCOME,
         recommendedItems: [],
-        whatsappOrderText: ''
+        whatsappOrderText: '',
+        isStreaming: false
       }
     ]);
     showToast(toastMessage);
@@ -441,7 +518,8 @@ const AIMitrModal = () => {
               sender: turn.role === 'user' ? 'user' : 'bot',
               text: String(turn.text || ''),
               recommendedItems: [],
-              whatsappOrderText: ''
+              whatsappOrderText: '',
+              isStreaming: false
             }));
             setMessages((prev) => (prev.length <= 1 ? [prev[0], ...restoredMsgs] : prev));
           }
@@ -588,7 +666,7 @@ const AIMitrModal = () => {
     }, 1400);
   };
 
-  const renderFormattedText = (rawText) => {
+  const renderFormattedText = (rawText, isStreamingNow = false) => {
     const html = String(rawText || '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -600,7 +678,12 @@ const AIMitrModal = () => {
       )
       .replace(/\n\n/g, '</p><p class="mt-3">')
       .replace(/\n/g, '<br/>');
-    return <span dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />;
+
+    const cursorHtml = isStreamingNow
+      ? '<span class="inline-block w-1.5 h-4 ml-1 align-middle bg-neutral-900 animate-pulse rounded-xs"></span>'
+      : '';
+
+    return <span dangerouslySetInnerHTML={{ __html: `<p>${html}${cursorHtml}</p>` }} />;
   };
 
   const sendMessage = async (textToSend) => {
@@ -723,55 +806,41 @@ const AIMitrModal = () => {
           }, 900);
         }
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: 'bot-' + Date.now(),
-            sender: 'bot',
-            text: data.reply,
-            recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
-            whatsappOrderText: data.whatsappOrderText || ''
-          }
-        ]);
+        // Stream the AI reply word-by-word!
+        streamBotReply({
+          fullText: data.reply,
+          recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
+          whatsappOrderText: data.whatsappOrderText || ''
+        });
 
         if (Array.isArray(data.quickFollowUps) && data.quickFollowUps.length > 0) {
           setChips(data.quickFollowUps);
         }
       } else {
         const clock = getLocalISTClockSummary();
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: 'bot-local-' + Date.now(),
-            sender: 'bot',
-            text:
-              `**क्षीर सागर के प्रमुख आइटम्स और रेट्स (${clock.shopStatusNote}):**\n\n` +
-              activeMenu
-                .slice(0, 6)
-                .map((m) => `• **${m.name}** — ₹${m.price}`)
-                .join('\n'),
-            recommendedItems: activeMenu.slice(0, 3),
-            whatsappOrderText: ''
-          }
-        ]);
-      }
-    } catch (error) {
-      console.warn('[Laddu AI Notice]:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: 'bot-fallback-' + Date.now(),
-          sender: 'bot',
-          text:
-            `**क्षीर सागर के प्रमुख आइटम्स और रेट्स:**\n\n` +
+        streamBotReply({
+          fullText:
+            `**क्षीर सागर के प्रमुख आइटम्स और रेट्स (${clock.shopStatusNote}):**\n\n` +
             activeMenu
               .slice(0, 6)
               .map((m) => `• **${m.name}** — ₹${m.price}`)
               .join('\n'),
           recommendedItems: activeMenu.slice(0, 3),
           whatsappOrderText: ''
-        }
-      ]);
+        });
+      }
+    } catch (error) {
+      console.warn('[Laddu AI Notice]:', error);
+      streamBotReply({
+        fullText:
+          `**क्षीर सागर के प्रमुख आइटम्स और रेट्स:**\n\n` +
+          activeMenu
+            .slice(0, 6)
+            .map((m) => `• **${m.name}** — ₹${m.price}`)
+            .join('\n'),
+        recommendedItems: activeMenu.slice(0, 3),
+        whatsappOrderText: ''
+      });
     } finally {
       setIsLoading(false);
     }
@@ -902,114 +971,119 @@ const AIMitrModal = () => {
         className="flex-1 overflow-y-auto px-4 py-5 space-y-6 max-w-3xl w-full mx-auto"
         style={{ scrollbarWidth: 'none' }}
       >
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`w-full flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            {msg.sender === 'user' ? (
-              <div className="max-w-[85%] sm:max-w-[75%] bg-neutral-100 rounded-[22px] px-4 py-3 text-[14.5px] leading-relaxed text-neutral-900">
-                {renderFormattedText(msg.text)}
-              </div>
-            ) : (
-              <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
-                {renderFormattedText(msg.text)}
-
-                {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button */}
-                <div className="flex items-center gap-3 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => handleSpeakMessage(msg.id, msg.text)}
-                    className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
-                      speakingMsgId === msg.id
-                        ? 'text-neutral-900'
-                        : 'text-neutral-400 hover:text-neutral-700'
-                    }`}
-                    title={speakingMsgId === msg.id ? 'आवाज़ रोकें' : 'यह जवाब सुनें'}
-                  >
-                    {speakingMsgId === msg.id ? (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <rect x="6" y="6" width="12" height="12" rx="2" strokeWidth="2" fill="currentColor" />
-                        </svg>
-                        <span>रोकें</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"
-                          />
-                        </svg>
-                        <span>सुनें</span>
-                      </>
-                    )}
-                  </button>
+        {messages.map((msg) => {
+          const isMsgStreaming = Boolean(msg.isStreaming || streamingMsgId === msg.id);
+          return (
+            <div
+              key={msg.id}
+              className={`w-full flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {msg.sender === 'user' ? (
+                <div className="max-w-[85%] sm:max-w-[75%] bg-neutral-100 rounded-[22px] px-4 py-3 text-[14.5px] leading-relaxed text-neutral-900">
+                  {renderFormattedText(msg.text, false)}
                 </div>
+              ) : (
+                <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
+                  {renderFormattedText(msg.text, isMsgStreaming)}
 
-                {msg.whatsappOrderText && (
-                  <div className="pt-1.5">
-                    <a
-                      href={`https://wa.me/918226935738?text=${encodeURIComponent(msg.whatsappOrderText)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold no-underline transition-all active:scale-95"
-                    >
-                      <span>💬 WhatsApp पर यह ऑर्डर भेजें</span>
-                    </a>
-                  </div>
-                )}
+                  {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button (Shown once streaming finishes) */}
+                  {!isMsgStreaming && (
+                    <div className="flex items-center gap-3 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSpeakMessage(msg.id, msg.text)}
+                        className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+                          speakingMsgId === msg.id
+                            ? 'text-neutral-900'
+                            : 'text-neutral-400 hover:text-neutral-700'
+                        }`}
+                        title={speakingMsgId === msg.id ? 'आवाज़ रोकें' : 'यह जवाब सुनें'}
+                      >
+                        {speakingMsgId === msg.id ? (
+                          <>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <rect x="6" y="6" width="12" height="12" rx="2" strokeWidth="2" fill="currentColor" />
+                            </svg>
+                            <span>रोकें</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"
+                              />
+                            </svg>
+                            <span>सुनें</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
 
-                {Array.isArray(msg.recommendedItems) && msg.recommendedItems.length > 0 && (
-                  <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {msg.recommendedItems.map((item, idx) => {
-                      const key = item.id || item.name || idx;
-                      const isAdded = !!addedKeys[key];
-                      return (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between p-2.5 rounded-2xl bg-neutral-50 hover:bg-neutral-100/80 transition-colors"
-                        >
-                          <div className="flex items-center gap-3 min-w-0 pr-2">
-                            <img
-                              src={item.image || '/sweet.jpg'}
-                              alt={item.name}
-                              onError={(e) => {
-                                e.currentTarget.src = '/sweet.jpg';
-                              }}
-                              className="w-11 h-11 rounded-xl object-cover bg-neutral-200 flex-shrink-0"
-                            />
-                            <div style={{ minWidth: 0 }}>
-                              <div className="font-semibold text-xs text-neutral-900 truncate">{item.name}</div>
-                              <div className="text-xs text-neutral-500 font-medium">
-                                ₹{item.price} {item.unit ? `• ${item.unit}` : ''}
+                  {!isMsgStreaming && msg.whatsappOrderText && (
+                    <div className="pt-1.5">
+                      <a
+                        href={`https://wa.me/918226935738?text=${encodeURIComponent(msg.whatsappOrderText)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold no-underline transition-all active:scale-95"
+                      >
+                        <span>💬 WhatsApp पर यह ऑर्डर भेजें</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {!isMsgStreaming && Array.isArray(msg.recommendedItems) && msg.recommendedItems.length > 0 && (
+                    <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {msg.recommendedItems.map((item, idx) => {
+                        const key = item.id || item.name || idx;
+                        const isAdded = !!addedKeys[key];
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between p-2.5 rounded-2xl bg-neutral-50 hover:bg-neutral-100/80 transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 pr-2">
+                              <img
+                                src={item.image || '/sweet.jpg'}
+                                alt={item.name}
+                                onError={(e) => {
+                                  e.currentTarget.src = '/sweet.jpg';
+                                }}
+                                className="w-11 h-11 rounded-xl object-cover bg-neutral-200 flex-shrink-0"
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div className="font-semibold text-xs text-neutral-900 truncate">{item.name}</div>
+                                <div className="text-xs text-neutral-500 font-medium">
+                                  ₹{item.price} {item.unit ? `• ${item.unit}` : ''}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleAddToReduxCart(item, 1)}
-                            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold active:scale-95 transition-all flex-shrink-0 ${
-                              isAdded
-                                ? 'bg-neutral-300 text-neutral-800'
-                                : 'bg-neutral-900 hover:bg-neutral-800 text-white'
-                            }`}
-                          >
-                            {isAdded ? '✓ Added' : '+ Add'}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+                            <button
+                              type="button"
+                              onClick={() => handleAddToReduxCart(item, 1)}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold active:scale-95 transition-all flex-shrink-0 ${
+                                isAdded
+                                  ? 'bg-neutral-300 text-neutral-800'
+                                  : 'bg-neutral-900 hover:bg-neutral-800 text-white'
+                              }`}
+                            >
+                              {isAdded ? '✓ Added' : '+ Add'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {isLoading && (
           <div className="w-full flex justify-start">
