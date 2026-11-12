@@ -1,5 +1,5 @@
 // File: netlify/functions/aiChat.js
-// Laddu AI — True Netlify Functions v2 Web-Standard Streaming + Universal Dynamic Action Buttons (`actionButtons`) + New Packaging Data
+// Laddu AI — Clean Context-Gated Action Links + Honest Error Handling (No Menu Dumping on Errors!)
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Shankar Shahi Market, Nai Bazar, Mairwa (Siwan) 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -558,7 +558,7 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
             }
           })
         },
-        5500
+        6500
       );
 
       if (res.ok && res.body) {
@@ -577,13 +577,38 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
 }
 
 // ============================================================================
-// UNIVERSAL DYNAMIC ACTION BUTTONS BUILDER (ZERO LINK FAILURE GUARDRAIL)
+// STRICT CONTEXT-GATED ACTION BUTTONS BUILDER (Never shows unwanted buttons!)
 // ============================================================================
-// AI chooses the custom `label` and `type` ("WHATSAPP" | "MAPS" | "CALL" | "OPEN_CART" | "CUSTOM_CAKE" | "APK" | "INSTAGRAM" | "URL"),
-// and this builder constructs 100% verified, properly encoded URLs or internal modal triggers so a button NEVER fails!
-function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessage, matchedLandmarks, clientCart) {
+// Only allows a MAPS button if the user ACTUALLY asked about store location/route/address/village distance.
+// Only allows a WHATSAPP/CALL/CART/CAKE button when relevant to the user's message.
+function isStoreLocationOrRouteQuery(userMessage, matchedLandmarks) {
+  const q = String(userMessage || "").toLowerCase();
+  if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) return true;
+  if (
+    /\b(address|location|map|maps|direction|rasta|raasta|route|kidhar|kahan|duri|distance|km|kitni dur|shankar shahi|nai bazar|mairwa dukan|shop kahan)\b/i.test(
+      q
+    ) ||
+    q.includes("पता") ||
+    q.includes("रास्ता") ||
+    q.includes("लोकेशन") ||
+    q.includes("कहाँ है") ||
+    q.includes("कहां है") ||
+    q.includes("कितनी दूर") ||
+    q.includes("दूरी") ||
+    q.includes("शंकर शाही") ||
+    q.includes("नई बाज़ार") ||
+    q.includes("नई बाजार") ||
+    q.includes("मैप")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessage, matchedLandmarks, clientCart, aiReplyText = "") {
   const finalButtons = [];
   const seenLabels = new Set();
+  const isLocationIntent = isStoreLocationOrRouteQuery(userMessage, matchedLandmarks);
 
   const addVerifiedButton = (btn) => {
     if (!btn || !btn.label) return;
@@ -601,7 +626,16 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
     const customLabel = String(item.label || "").trim();
     const payload = String(item.payload || item.text || item.url || "").trim();
 
-    if (type === "WHATSAPP") {
+    if (type === "MAPS" || type === "DIRECTION" || type === "LOCATION") {
+      // STRICT GATE: Only include a MAPS button if the user actually asked about location, address, distance, or directions!
+      if (!isLocationIntent) continue;
+      addVerifiedButton({
+        type: "MAPS",
+        label: customLabel || "Google Maps पर रास्ता देखें",
+        href: STORE_PROFILE.googleMapsDirectionsUrl,
+        external: true
+      });
+    } else if (type === "WHATSAPP") {
       const waMsg =
         payload ||
         legacyWhatsappText ||
@@ -610,61 +644,52 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
           : "Namaste KshirSagar! Mujhe order/jankari chahiye.");
       addVerifiedButton({
         type: "WHATSAPP",
-        label: customLabel || "💬 WhatsApp पर ऑर्डर / बात करें",
+        label: customLabel || "WhatsApp पर ऑर्डर भेजें",
         href: `https://wa.me/918226935738?text=${encodeURIComponent(waMsg)}`,
         external: true
       });
-    } else if (type === "MAPS" || type === "DIRECTION" || type === "LOCATION") {
-      addVerifiedButton({
-        type: "MAPS",
-        label: customLabel || "📍 Google Maps पर दुकान का रास्ता देखें",
-        href: STORE_PROFILE.googleMapsDirectionsUrl,
-        external: true
-      });
     } else if (type === "CALL" || type === "PHONE") {
-      // Allow choosing any of the 3 official KshirSagar numbers, defaulting to +918226935738
       const cleanDigits = payload.replace(/\D/g, "");
       let dialNum = "+918226935738";
       if (cleanDigits.endsWith("9931890824")) dialNum = "+919931890824";
       else if (cleanDigits.endsWith("9523242424")) dialNum = "+919523242424";
       addVerifiedButton({
         type: "CALL",
-        label: customLabel || "📞 क्षीर सागर पर अभी कॉल करें",
+        label: customLabel || "दुकान पर कॉल करें",
         href: `tel:${dialNum}`,
         external: false
       });
     } else if (type === "OPEN_CART" || type === "CART") {
       addVerifiedButton({
         type: "OPEN_CART",
-        label: customLabel || "🛒 अपना शॉपिंग कार्ट खोलें",
+        label: customLabel || "शॉपिंग कार्ट खोलें",
         modalAction: "OPEN_CART"
       });
     } else if (type === "CUSTOM_CAKE" || type === "OPEN_CUSTOM_CAKE" || type === "CAKE") {
       addVerifiedButton({
         type: "CUSTOM_CAKE",
-        label: customLabel || "🎂 कस्टम केक ऑर्डर फॉर्म खोलें",
+        label: customLabel || "कस्टम केक ऑर्डर फॉर्म खोलें",
         modalAction: "OPEN_CUSTOM_CAKE"
       });
     } else if (type === "APK" || type === "APP") {
       addVerifiedButton({
         type: "APK",
-        label: customLabel || "📲 KshirSagar Android App डाउनलोड करें",
+        label: customLabel || "KshirSagar Android App डाउनलोड करें",
         href: STORE_PROFILE.androidApp,
         external: true
       });
     } else if (type === "INSTAGRAM" || type === "DEVELOPER") {
       addVerifiedButton({
         type: "INSTAGRAM",
-        label: customLabel || "👨‍💻 Developer (@_vikashkgupta) से जुड़ें",
+        label: customLabel || "Developer (@_vikashkgupta)",
         href: "https://www.instagram.com/_vikashkgupta/",
         external: true
       });
     } else if (type === "URL" || type === "LINK") {
-      // Strict URL safety guardrail: only allow valid https:// URLs (never fabricated relative/broken links)
       if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(payload)) {
         addVerifiedButton({
           type: "URL",
-          label: customLabel || "🔗 लिंक खोलें",
+          label: customLabel || payload.replace(/^https?:\/\/(www\.)?/i, "").split("/")[0],
           href: payload,
           external: true
         });
@@ -672,52 +697,66 @@ function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessa
     }
   }
 
-  // Backward compatibility: if `legacyWhatsappText` was set and no WHATSAPP button exists yet, add it automatically
+  // If AI mentioned an external https:// URL in the reply text (e.g. "https://aktu.ac.in/") and didn't add a URL chip, extract it cleanly!
+  if (finalButtons.length === 0 && aiReplyText) {
+    const urlMatches = String(aiReplyText).match(/https:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/[^\s),*"'<>]*)?/g);
+    if (urlMatches && urlMatches.length > 0) {
+      const firstUrl = urlMatches[0].replace(/[.,;!?]+$/, "");
+      if (!firstUrl.includes("kshirsagarsweets.netlify.app")) {
+        let hostLabel = "वेबसाइट खोलें";
+        try {
+          hostLabel = new URL(firstUrl).hostname.replace(/^www\./, "");
+        } catch {}
+        addVerifiedButton({
+          type: "URL",
+          label: `${hostLabel} खोलें`,
+          href: firstUrl,
+          external: true
+        });
+      }
+    }
+  }
+
   if (legacyWhatsappText && !finalButtons.some((b) => b.type === "WHATSAPP")) {
     addVerifiedButton({
       type: "WHATSAPP",
-      label: "💬 WhatsApp पर यह ऑर्डर भेजें",
+      label: "WhatsApp पर यह ऑर्डर भेजें",
       href: `https://wa.me/918226935738?text=${encodeURIComponent(legacyWhatsappText)}`,
       external: true
     });
   }
 
-  // Automatic contextual smart button if the user asked about a landmark/address/route and AI didn't add a MAPS button
-  const lowMsg = String(userMessage || "").toLowerCase();
-  if (
-    finalButtons.length === 0 &&
-    ((Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) ||
-      /\b(address|location|map|rasta|kidhar|kahan|duri|distance|market)\b/i.test(lowMsg) ||
-      lowMsg.includes("पता") ||
-      lowMsg.includes("रास्ता") ||
-      lowMsg.includes("कहाँ") ||
-      lowMsg.includes("मार्केट"))
-  ) {
+  // Only auto-attach a Maps button if the user genuinely asked about store location/route/landmark!
+  if (finalButtons.length === 0 && isLocationIntent) {
     const landmarkName = matchedLandmarks?.[0]?.name?.split("(")?.[0]?.trim();
     addVerifiedButton({
       type: "MAPS",
       label: landmarkName
-        ? `📍 ${landmarkName} से दुकान का मैप देखें`
-        : "📍 Google Maps पर दुकान का रास्ता देखें",
+        ? `${landmarkName} से दुकान का रास्ता देखें`
+        : "Google Maps पर रास्ता देखें",
       href: STORE_PROFILE.googleMapsDirectionsUrl,
       external: true
     });
   }
 
-  return finalButtons.slice(0, 3);
+  return finalButtons.slice(0, 2);
 }
 
-function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherInfo, clientCart, clientDevice, locationStr, matchedLandmarks, debugReason) {
+// Handles deterministic instant actions (like Cart 0 / Clear Cart) or returns an honest `isError: true` response when AI API fails!
+// NEVER dumps Ghewar / Onion Pakoda menu on unrelated failed prompts!
+function buildHonestFallbackResponse(userMessage, clockInfo, clientCart, matchedLandmarks, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
 
+  // 1. Instant Cart Clear command always succeeds even if AI API is busy
   if (
     (/\b(cart|कार्ट)\b/i.test(lower) && /\b(0|zero|clear|empty|khali|hata|remove|delete|खाली|हटा)\b/i.test(lower)) ||
     lower.includes("cart 0") ||
     lower.includes("clear cart")
   ) {
     return {
-      reply: "✅ मैंने आपका कार्ट पूरी तरह खाली (0 items) कर दिया है! आप जब चाहें नए आइटम्स जोड़ सकते हैं।",
+      isError: false,
+      reply: "✅ मैंने आपका कार्ट पूरी तरह खाली (0 items) कर दिया है!",
       recommendedItems: [],
       action: "CLEAR_CART",
       actionButtons: [],
@@ -726,158 +765,15 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
     };
   }
 
-  if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) {
-    const top = matchedLandmarks[0];
-    const shortPlace = top.name.split("(")[0].trim();
-    return {
-      reply:
-        `📍 **${top.name}** से **KshirSagar (${STORE_PROFILE.address})** की जानकारी:\n\n` +
-        `• **सड़क से अनुमानित दूरी:** ~${top.roadKm} km (${top.direction})\n` +
-        `• **पहुँचने का अनुमानित समय:** ~${top.timeMins} मिनट\n` +
-        `• **डिलीवरी ज़ोन:** ${top.zone}\n` +
-        `• **दुकान का पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)`,
-      recommendedItems: [],
-      actionButtons: sanitizeAndBuildActionButtons(
-        [
-          { type: "MAPS", label: `📍 ${shortPlace} से दुकान का रास्ता देखें` },
-          { type: "CALL", label: "📞 दुकान पर कॉल करें" }
-        ],
-        "",
-        userMessage,
-        matchedLandmarks,
-        clientCart
-      ),
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
-    };
-  }
-
-  if (
-    /\b(time|date|day|tarikh|tareekh|din|samay|baje|clock|aaj)\b/i.test(lower) ||
-    lower.includes("टाइम") ||
-    lower.includes("समय") ||
-    lower.includes("तारीख") ||
-    lower.includes("कौन सा दिन") ||
-    lower.includes("कितने बजे")
-  ) {
-    return {
-      reply:
-        `🕒 **अभी का लाइव समय और तारीख:**\n\n` +
-        `• **समय (IST):** ${clockInfo.formattedTime}\n` +
-        `• **तारीख व दिन:** ${clockInfo.formattedDate}\n` +
-        `• **दुकान की स्थिति:** ${clockInfo.shopStatusNote}\n` +
-        `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}`,
-      recommendedItems: [],
-      actionButtons: [],
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो", "📍 दुकान का समय और पता"]
-    };
-  }
-
-  if (
-    /\b(battery|charging|charge|network|internet|speed|device|phone|meri location|mera shahar|my location)\b/i.test(lower) ||
-    lower.includes("बैटरी") ||
-    lower.includes("नेटवर्क") ||
-    lower.includes("मेरी लोकेशन")
-  ) {
-    return {
-      reply:
-        `📱 **आपके डिवाइस और लोकेशन की लाइव स्थिति:**\n\n` +
-        `• **बैटरी:** ${clientDevice?.batteryText || "उपलब्ध नहीं"}\n` +
-        `• **नेटवर्क कनेक्शन:** ${clientDevice?.networkText || "Online"}\n` +
-        `• **डिवाइस व ब्राउज़र:** ${clientDevice?.platform || "Web Browser"}\n` +
-        `• **आपकी लोकेशन:** ${locationStr}`,
-      recommendedItems: [],
-      actionButtons: [],
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
-    };
-  }
-
-  if (/\b(cart|bill|total|mera order)\b/i.test(lower) || lower.includes("कार्ट") || lower.includes("बिल")) {
-    const items = Array.isArray(clientCart?.items) ? clientCart.items : [];
-    if (items.length === 0) {
-      return {
-        reply: "🛒 आपका कार्ट अभी खाली (0 आइटम) है! नीचे दिए गए लोकप्रिय आइटम्स में से अपनी पसंद की मिठाई या स्नैक्स चुनें:",
-        recommendedItems: menu.slice(0, 3),
-        actionButtons: [],
-        debugError: debugReason || null,
-        quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
-      };
-    }
-    const listStr = items.map((i) => `• **${i.name}** × ${i.qty} = ₹${i.price * i.qty}`).join("\n");
-    const waText = `Namaste KshirSagar! Mera Order:\n${items.map((i) => `- ${i.name} x ${i.qty} (₹${i.price * i.qty})`).join("\n")}\nTotal: ₹${clientCart.grandTotal}`;
-    return {
-      reply: `🛒 **आपके कार्ट में अभी ${clientCart.totalQty} आइटम हैं (कुल बिल: ₹${clientCart.grandTotal}):**\n\n${listStr}`,
-      recommendedItems: [],
-      whatsappOrderText: waText,
-      actionButtons: sanitizeAndBuildActionButtons(
-        [
-          { type: "WHATSAPP", label: `💬 ₹${clientCart.grandTotal} का ऑर्डर WhatsApp पर भेजें`, payload: waText },
-          { type: "OPEN_CART", label: "🛒 कार्ट खोलें और चेकआउट करें" }
-        ],
-        waText,
-        userMessage,
-        matchedLandmarks,
-        clientCart
-      ),
-      debugError: debugReason || null,
-      quickFollowUps: ["🛒 मेरा कार्ट खोल दो", "🗑️ कार्ट खाली (0) कर दो"]
-    };
-  }
-
-  if (
-    lower.includes("address") ||
-    lower.includes("kahan") ||
-    lower.includes("number") ||
-    lower.includes("phone") ||
-    lower.includes("contact") ||
-    lower.includes("dukan") ||
-    lower.includes("shop") ||
-    lower.includes("mairwa") ||
-    lower.includes("खुलती") ||
-    lower.includes("कहाँ") ||
-    lower.includes("पता")
-  ) {
-    return {
-      reply:
-        `**${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
-        `• **पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
-        `• **समय:** ${STORE_PROFILE.timings} (${clockInfo.shopStatusNote})\n` +
-        `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}\n` +
-        `• **मोबाइल नंबर:** ${STORE_PROFILE.packagingPhones.join(" / ")}`,
-      recommendedItems: [],
-      actionButtons: sanitizeAndBuildActionButtons(
-        [
-          { type: "MAPS", label: "📍 शंकर शाही मार्केट (नई बाज़ार) मैप पर देखें" },
-          { type: "CALL", label: "📞 दुकान पर कॉल करें" }
-        ],
-        "",
-        userMessage,
-        matchedLandmarks,
-        clientCart
-      ),
-      debugError: debugReason || null,
-      quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
-    };
-  }
-
+  // 2. For ANY other query where the AI model failed or timed out, return an honest error state with a Retry button!
   return {
-    reply:
-      "**क्षीर सागर के सबसे लोकप्रिय आइटम्स और ताज़ा रेट्स:**\n\n" +
-      menu
-        .slice(0, 6)
-        .map((m) => `• **${m.name}** — ₹${m.price}`)
-        .join("\n"),
-    recommendedItems: menu.slice(0, 3),
+    isError: true,
+    reply: "⚠️ **Something went wrong!** अभी सर्वर से जवाब लाने में थोड़ी दिक्कत हुई। कृपया नीचे **Retry** दबाकर दोबारा कोशिश करें।",
+    recommendedItems: [],
+    action: "NONE",
     actionButtons: [],
-    debugError: debugReason || null,
-    quickFollowUps: [
-      "🍬 आज की स्पेशल मिठाई और रेट बताओ",
-      "🍕 ₹500 के बजट में पार्टी कॉम्बो सजेस्ट करो",
-      "🏷️ आज के स्पेशल ऑफ़र्स क्या हैं?",
-      "📍 दुकान का समय और पता"
-    ]
+    debugError: debugReason || "AI service temporary timeout",
+    quickFollowUps: []
   };
 }
 
@@ -904,8 +800,8 @@ Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is alwa
 YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
 
 CAPABILITY 1 — UNIVERSAL SMART AI ASSISTANT:
-- The user can ask you ANYTHING in the world: casual conversation, math problems, coding/programming questions, science, history, general knowledge, recipes, career advice, translations, jokes, essays, or daily life questions.
-- For general/non-food questions, set "showFoodCards": false and "recommendedItemNames": [] in metadata.
+- The user can ask you ANYTHING in the world: universities (like AKTU), websites, coding, math, science, history, general knowledge, career advice, translations, or daily life questions.
+- CRITICAL: When the user asks a general question (not about KshirSagar food/store), answer ONLY their question directly. Do NOT mention sweets, cakes, or store directions, set "showFoodCards": false, "recommendedItemNames": [], and only include a "URL" actionButton if they asked for a website link!
 
 CAPABILITY 2 — KSHIRSAGAR WEBSITE, LIVE MENU, CART CONTROLLER & HYPER-LOCAL MAIRWA EXPERT:
 Use the exact real-time context provided below whenever relevant:
@@ -946,7 +842,7 @@ Use the exact real-time context provided below whenever relevant:
 - Matched Landmarks from User's Query: ${
     matchedLandmarks.length > 0
       ? JSON.stringify(matchedLandmarks)
-      : "No specific village/landmark name in this message; use general Mairwa store location if asked."
+      : "No specific village/landmark name in this message."
   }
 
 === 6. SMART HALWAI PORTION & PARTY CALCULATOR ===
@@ -973,22 +869,18 @@ ${JSON.stringify(
 === 10. LIVE AIRTABLE OFFERS TABLE ===
 ${JSON.stringify(activeOffers)}
 
-=== 11. UNIVERSAL DYNAMIC ACTION BUTTONS ("actionButtons") ===
-Whenever a clickable button would be helpful to the user, include 1 or 2 customized buttons inside the "actionButtons" array in your metadata JSON!
-You can customize BOTH the button's display text ("label", with an emoji) and its intent ("type" + optional "payload"):
-- {"type": "MAPS", "label": "📍 शंकर शाही मार्केट (नई बाज़ार) का रास्ता देखें"} -> Opens Google Maps directions to KshirSagar Mairwa! Use whenever location, address, distance, village, or directions are discussed.
-- {"type": "WHATSAPP", "label": "💬 ₹500 का पार्टी कॉम्बो WhatsApp पर मँगाएँ", "payload": "Namaste KshirSagar! Mujhe..."} -> Opens WhatsApp with your custom pre-filled message ("payload")! Use whenever orders, combos, bulk/party bookings, or WhatsApp are discussed.
-- {"type": "CALL", "label": "📞 क्षीर सागर पर अभी कॉल करें", "payload": "+918226935738"} -> Dials the store directly! Use when urgent delivery, bulk inquiry, or phone contact is discussed.
-- {"type": "OPEN_CART", "label": "🛒 अपना कार्ट देखें (Checkout)"} -> Opens the user's shopping cart modal! Use when cart/bill is discussed.
-- {"type": "CUSTOM_CAKE", "label": "🎂 कस्टम बर्थडे केक ऑर्डर फॉर्म खोलें"} -> Opens the custom cake design modal! Use when cakes/birthdays/anniversaries are discussed.
-- {"type": "APK", "label": "📲 KshirSagar Android App डाउनलोड करें"} -> Downloads the official Android APK!
-- {"type": "INSTAGRAM", "label": "👨‍💻 Developer (@_vikashkgupta) से जुड़ें"} -> Opens developer Vikash Kumar Gupta's Instagram!
-- {"type": "URL", "label": "🔗 लिंक खोलें", "payload": "https://..."} -> Opens any verified external https:// URL.
-(If the user is just chatting casually or asking a general math/science question where no button is needed, set "actionButtons": [].)
+=== 11. STRICT RULES FOR "actionButtons" (ONLY INCLUDE WHEN GENUINELY NEEDED!) ===
+CRITICAL: Do NOT attach "actionButtons" on every response! Keep "actionButtons": [] by default, and ONLY add a button when it directly matches what the user asked for:
+- Use {"type": "MAPS", "label": "शंकर शाही मार्केट (नई बाज़ार) का रास्ता देखें"} ONLY when the user explicitly asks about the shop's address, location, route, directions, or distance from a village/landmark. NEVER include a MAPS button on general questions, greetings, or menu price checks!
+- Use {"type": "WHATSAPP", "label": "WhatsApp पर ऑर्डर भेजें", "payload": "Namaste KshirSagar!..."} ONLY when the user wants to place an order on WhatsApp or book a party/bulk order.
+- Use {"type": "CALL", "label": "दुकान पर कॉल करें", "payload": "+918226935738"} ONLY when the user asks for a phone number or urgent contact.
+- Use {"type": "OPEN_CART", "label": "शॉपिंग कार्ट खोलें"} ONLY when the user asks to view/checkout their cart.
+- Use {"type": "CUSTOM_CAKE", "label": "कस्टम केक फॉर्म खोलें"} ONLY when the user asks about custom cakes.
+- Use {"type": "URL", "label": "आधिकारिक वेबसाइट खोलें", "payload": "https://..."} ONLY when the user asks for an external website link (like AKTU's official website).
 `;
 }
 
-function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName, matchedLandmarks, clientCart) {
+function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName, matchedLandmarks, clientCart, aiReplyText = "") {
   const lowerMsg = String(userMessage || "").toLowerCase();
   const actionVal = parsedMeta?.action || "NONE";
   let finalAction = actionVal;
@@ -1061,7 +953,8 @@ function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedN
     parsedMeta?.whatsappOrderText || "",
     userMessage,
     matchedLandmarks,
-    clientCart
+    clientCart,
+    aiReplyText
   );
 
   return {
@@ -1218,33 +1111,17 @@ export default async (req, context) => {
       process.env.GOOGLE_API_KEY;
 
     if (!geminiKey) {
-      const fallbackResult = buildSmartLocalFallback(
+      const fallbackResult = buildHonestFallbackResponse(
         userMessage,
-        activeMenu,
-        activeOffers,
         clockInfo,
-        weatherInfo,
         clientCart,
-        clientDevice,
-        locationStr,
         matchedLandmarks,
         "GEMINI_API_KEY not found in environment variables."
       );
-      const supabaseStatus = await saveSessionToSupabase({
-        existingRow: existingSupabaseRow,
-        sessionId,
-        customerName: rememberedName,
-        customerMobile: rememberedMobile,
-        deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
-        userMessage,
-        aiReply: fallbackResult.reply
-      });
       return new Response(
         JSON.stringify({
           success: true,
           mode: "missing_env_key",
-          dataSource: liveData.source,
-          supabaseStatus,
           ...fallbackResult
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1273,8 +1150,8 @@ export default async (req, context) => {
 1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
 2. At the very end of your response, on a new line, output the exact delimiter:
 ---METADATA---
-followed immediately by a single-line JSON object for cart actions, food cards, dynamic actionButtons, and follow-ups matching this schema:
-{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","actionButtons":[{"type":"MAPS","label":"📍 शंकर शाही मार्केट का रास्ता देखें","payload":""}],"detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
+followed immediately by a single-line JSON object for cart actions, food cards, dynamic actionButtons (ONLY when genuinely needed—leave [] if not needed!), and follow-ups matching this schema:
+{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","actionButtons":[],"detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
 `;
 
     const contents = [
@@ -1291,33 +1168,17 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
     const sseResult = await openGeminiSSEStream(geminiKey, streamingSystemInstruction, contents);
 
     if (!sseResult.ok) {
-      const fallbackResult = buildSmartLocalFallback(
+      const fallbackResult = buildHonestFallbackResponse(
         userMessage,
-        activeMenu,
-        activeOffers,
         clockInfo,
-        weatherInfo,
         clientCart,
-        clientDevice,
-        locationStr,
         matchedLandmarks,
         sseResult.errorText
       );
-      const supabaseStatus = await saveSessionToSupabase({
-        existingRow: existingSupabaseRow,
-        sessionId,
-        customerName: rememberedName,
-        customerMobile: rememberedMobile,
-        deviceInfo: `${deviceInfo} | Loc: ${locationStr}`,
-        userMessage,
-        aiReply: fallbackResult.reply
-      });
       return new Response(
         JSON.stringify({
           success: true,
           mode: "api_error_fallback",
-          dataSource: liveData.source,
-          supabaseStatus,
           ...fallbackResult
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1404,7 +1265,8 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             activeMenu,
             rememberedName,
             matchedLandmarks,
-            clientCart
+            clientCart,
+            finalReplyText
           );
 
           const supabaseStatus = await saveSessionToSupabase({
@@ -1421,6 +1283,7 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             encoder.encode(
               `data: ${JSON.stringify({
                 type: "done",
+                isError: false,
                 reply: finalReplyText,
                 modelUsed: sseResult.modelUsed,
                 supabaseStatus,
@@ -1442,7 +1305,10 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             encoder.encode(
               `data: ${JSON.stringify({
                 type: "done",
-                reply: accumulatedRaw || "माफ़ कीजिए, कनेक्शन में थोड़ी रुकावट आई।",
+                isError: !accumulatedRaw,
+                reply:
+                  accumulatedRaw ||
+                  "⚠️ **Something went wrong!** कनेक्शन में थोड़ी रुकावट आई। कृपया नीचे **Retry** दबाकर दोबारा कोशिश करें।",
                 recommendedItems: [],
                 actionButtons: [],
                 action: "NONE"
@@ -1465,7 +1331,7 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
     });
   } catch (err) {
     const clockInfo = getLiveISTClockAndShopStatus();
-    const fallbackResult = buildSmartLocalFallback("", FALLBACK_MENU, FALLBACK_OFFERS, clockInfo, "", {}, {}, "Mairwa, Bihar", [], err.message);
+    const fallbackResult = buildHonestFallbackResponse("", clockInfo, {}, [], err.message);
     return new Response(
       JSON.stringify({
         success: true,

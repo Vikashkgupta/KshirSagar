@@ -1,5 +1,5 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — True Backend SSE Streaming + Universal Dynamic Action Buttons (`actionButtons`) + New Packaging Data
+// Laddu AI — Clean ChatGPT/Gemini-Style Action Chips + Auto-Linked URLs + Honest Retry Error Card (No Fake Menu Fallback!)
 // Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Shankar Shahi Market, Nai Bazar, Mairwa (Siwan) 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
@@ -158,41 +158,6 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
   };
 }
 
-function getLocalISTClockSummary() {
-  const now = new Date();
-  const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-  const istDate = new Date(istString);
-
-  const formattedDate = new Intl.DateTimeFormat('hi-IN', {
-    timeZone: 'Asia/Kolkata',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  }).format(now);
-
-  const formattedTime = new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  }).format(now);
-
-  const totalMins = istDate.getHours() * 60 + istDate.getMinutes();
-  const isShopOpen = totalMins >= 480 && totalMins < 1320;
-  const isDeliveryOpen = totalMins >= 600 && totalMins < 1200;
-
-  const shopStatusNote = isShopOpen
-    ? `🟢 दुकान अभी खुली है (रात 10:00 बजे तक)`
-    : `🔴 दुकान अभी बंद है (सुबह 8:00 बजे खुलेगी)`;
-  const deliveryStatusNote = isDeliveryOpen
-    ? `🚴 होम डिलीवरी अभी चालू है (सुबह 10:00 से रात 8:00 बजे तक)`
-    : `🏬 होम डिलीवरी का समय सुबह 10:00 से रात 8:00 बजे तक है`;
-
-  return { formattedDate, formattedTime, shopStatusNote, deliveryStatusNote };
-}
-
 // Client-side guardrail normalizer so every button in `actionButtons` is 100% clickable and never broken
 function normalizeClientActionButtons(rawActionButtons, whatsappOrderText) {
   const list = [];
@@ -201,13 +166,16 @@ function normalizeClientActionButtons(rawActionButtons, whatsappOrderText) {
   if (Array.isArray(rawActionButtons)) {
     rawActionButtons.forEach((btn) => {
       if (!btn || !btn.label) return;
-      const label = String(btn.label).trim();
-      if (!label || seen.has(label.toLowerCase())) return;
+      // Strip leading emoji clutter so we can render clean SVG icons
+      const cleanLabel = String(btn.label)
+        .replace(/^[📍💬📞🛒🎂📲👨‍💻🔗✨]+\s*/u, '')
+        .trim();
+      if (!cleanLabel || seen.has(cleanLabel.toLowerCase())) return;
 
       if (btn.modalAction === 'OPEN_CART' || btn.modalAction === 'OPEN_CUSTOM_CAKE') {
-        seen.add(label.toLowerCase());
+        seen.add(cleanLabel.toLowerCase());
         list.push({
-          label,
+          label: cleanLabel,
           modalAction: btn.modalAction,
           type: btn.type || btn.modalAction
         });
@@ -216,9 +184,9 @@ function normalizeClientActionButtons(rawActionButtons, whatsappOrderText) {
 
       const href = String(btn.href || '').trim();
       if (/^(https:\/\/|tel:)/i.test(href)) {
-        seen.add(label.toLowerCase());
+        seen.add(cleanLabel.toLowerCase());
         list.push({
-          label,
+          label: cleanLabel,
           href,
           external: !href.startsWith('tel:'),
           type: btn.type || 'URL'
@@ -227,17 +195,48 @@ function normalizeClientActionButtons(rawActionButtons, whatsappOrderText) {
     });
   }
 
-  // Fallback if backend only sent `whatsappOrderText`
   if (list.length === 0 && whatsappOrderText) {
     list.push({
-      label: '💬 WhatsApp पर यह ऑर्डर भेजें',
+      label: 'WhatsApp पर यह ऑर्डर भेजें',
       href: `https://wa.me/918226935738?text=${encodeURIComponent(whatsappOrderText)}`,
       external: true,
       type: 'WHATSAPP'
     });
   }
 
-  return list.slice(0, 3);
+  return list.slice(0, 2);
+}
+
+// Clean SVG icon per action type (ChatGPT / Gemini citation chip style)
+function ActionChipIcon({ type }) {
+  const t = String(type || '').toUpperCase();
+  if (t === 'MAPS' || t === 'LOCATION' || t === 'DIRECTION') {
+    return (
+      <svg className="w-3.5 h-3.5 text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    );
+  }
+  if (t === 'WHATSAPP') {
+    return (
+      <svg className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+      </svg>
+    );
+  }
+  if (t === 'CALL' || t === 'PHONE') {
+    return (
+      <svg className="w-3.5 h-3.5 text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="w-3.5 h-3.5 text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+  );
 }
 
 const AIMitrModal = () => {
@@ -261,6 +260,8 @@ const AIMitrModal = () => {
       text: INITIAL_WELCOME,
       recommendedItems: [],
       actionButtons: [],
+      isError: false,
+      retryPrompt: '',
       isStreaming: false
     }
   ]);
@@ -293,7 +294,7 @@ const AIMitrModal = () => {
     };
   }, []);
 
-  const streamBotReplyFallback = ({ fullText, recommendedItems = [], actionButtons = [] }) => {
+  const streamBotReplyFallback = ({ fullText, recommendedItems = [], actionButtons = [], isError = false, retryPrompt = '' }) => {
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current);
       streamTimerRef.current = null;
@@ -301,6 +302,26 @@ const AIMitrModal = () => {
 
     const msgId = 'bot-' + Date.now();
     const safeFull = String(fullText || '');
+
+    // If it's an error message, show it immediately with the Retry button (no typewriter delay needed)
+    if (isError) {
+      setStreamingMsgId(null);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: msgId,
+          sender: 'bot',
+          text: safeFull,
+          recommendedItems: [],
+          actionButtons: [],
+          isError: true,
+          retryPrompt,
+          isStreaming: false
+        }
+      ]);
+      return;
+    }
+
     const tokens = safeFull.match(/\S+\s*|\n+/g) || [safeFull];
     const stepSize = tokens.length > 140 ? 4 : tokens.length > 70 ? 2 : 1;
     let index = stepSize;
@@ -314,6 +335,8 @@ const AIMitrModal = () => {
         text: tokens.slice(0, stepSize).join(''),
         recommendedItems: [],
         actionButtons: [],
+        isError: false,
+        retryPrompt: '',
         isStreaming: true
       }
     ]);
@@ -362,6 +385,8 @@ const AIMitrModal = () => {
         text: INITIAL_WELCOME,
         recommendedItems: [],
         actionButtons: [],
+        isError: false,
+        retryPrompt: '',
         isStreaming: false
       }
     ]);
@@ -560,6 +585,8 @@ const AIMitrModal = () => {
               text: String(turn.text || ''),
               recommendedItems: [],
               actionButtons: [],
+              isError: false,
+              retryPrompt: '',
               isStreaming: false
             }));
             setMessages((prev) => (prev.length <= 1 ? [prev[0], ...restoredMsgs] : prev));
@@ -762,6 +789,7 @@ const AIMitrModal = () => {
     }
   };
 
+  // Renders formatted markdown + automatically turns any https:// URLs in the text into clickable links (like ChatGPT & Gemini!)
   const renderFormattedText = (rawText) => {
     const html = String(rawText || '')
       .replace(/&/g, '&amp;')
@@ -772,13 +800,21 @@ const AIMitrModal = () => {
         /`(.*?)`/g,
         '<code class="bg-neutral-100 text-neutral-800 px-1.5 py-0.5 rounded text-xs font-mono font-medium">$1</code>'
       )
+      .replace(
+        /(https?:\/\/[^\s<)"']+)/g,
+        (url) => {
+          const cleanUrl = url.replace(/[.,;!?]+$/, '');
+          const trailing = url.slice(cleanUrl.length);
+          return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 underline underline-offset-2 font-medium break-all">${cleanUrl}</a>${trailing}`;
+        }
+      )
       .replace(/\n\n/g, '</p><p class="mt-3">')
       .replace(/\n/g, '<br/>');
 
     return <span dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />;
   };
 
-  const sendMessage = async (textToSend) => {
+  const sendMessage = async (textToSend, isRetryAttempt = false) => {
     const trimmed = String(textToSend || input || '').trim();
     if (!trimmed || isLoading) return;
 
@@ -803,14 +839,19 @@ const AIMitrModal = () => {
       showToast('कार्ट खाली (0) कर दिया गया');
     }
 
-    const userMsg = {
-      id: 'user-' + Date.now(),
-      sender: 'user',
-      text: trimmed
-    };
+    // If the user clicked "Retry" on an error card, remove that error card and re-run without duplicating the user bubble!
+    if (isRetryAttempt) {
+      setMessages((prev) => prev.filter((m) => !m.isError));
+    } else {
+      const userMsg = {
+        id: 'user-' + Date.now(),
+        sender: 'user',
+        text: trimmed
+      };
+      setMessages((prev) => [...prev.filter((m) => !m.isError), userMsg]);
+      setInput('');
+    }
 
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
     setIsLoading(true);
 
     const activeMenu = getNormalizedClientMenu();
@@ -818,10 +859,13 @@ const AIMitrModal = () => {
     const silentDevice = await getCompleteDeviceBatteryAndLocationContext(userLocationText);
 
     try {
-      const historyPayload = messages.slice(-8).map((m) => ({
-        role: m.sender === 'bot' ? 'assistant' : 'user',
-        content: m.text
-      }));
+      const historyPayload = messages
+        .filter((m) => !m.isError)
+        .slice(-8)
+        .map((m) => ({
+          role: m.sender === 'bot' ? 'assistant' : 'user',
+          content: m.text
+        }));
 
       const requestPayload = {
         stream: true,
@@ -878,6 +922,8 @@ const AIMitrModal = () => {
             text: '',
             recommendedItems: [],
             actionButtons: [],
+            isError: false,
+            retryPrompt: trimmed,
             isStreaming: true
           }
         ]);
@@ -911,7 +957,10 @@ const AIMitrModal = () => {
                 );
               } else if (evt.type === 'done') {
                 const finalTxt = evt.reply || liveAccumulated;
-                const verifiedButtons = normalizeClientActionButtons(evt.actionButtons, evt.whatsappOrderText);
+                const isErrFlag = Boolean(evt.isError);
+                const verifiedButtons = isErrFlag
+                  ? []
+                  : normalizeClientActionButtons(evt.actionButtons, evt.whatsappOrderText);
                 setStreamingMsgId(null);
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -919,14 +968,19 @@ const AIMitrModal = () => {
                       ? {
                           ...m,
                           text: finalTxt,
-                          recommendedItems: Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
+                          isError: isErrFlag,
+                          retryPrompt: trimmed,
+                          recommendedItems:
+                            !isErrFlag && Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
                           actionButtons: verifiedButtons,
                           isStreaming: false
                         }
                       : m
                   )
                 );
-                executeAiMetadataActions(evt);
+                if (!isErrFlag) {
+                  executeAiMetadataActions(evt);
+                }
               }
             } catch {}
           }
@@ -939,41 +993,41 @@ const AIMitrModal = () => {
         return;
       }
 
-      // CASE 2: BUFFERED JSON RESPONSE FALLBACK
+      // CASE 2: BUFFERED JSON RESPONSE OR HONEST ERROR CARD
       const data = response.ok && contentType.includes('application/json') ? await response.json() : null;
 
       if (data && data.reply) {
-        executeAiMetadataActions(data);
-        const verifiedButtons = normalizeClientActionButtons(data.actionButtons, data.whatsappOrderText);
+        const isErrFlag = Boolean(data.isError);
+        if (!isErrFlag) {
+          executeAiMetadataActions(data);
+        }
+        const verifiedButtons = isErrFlag
+          ? []
+          : normalizeClientActionButtons(data.actionButtons, data.whatsappOrderText);
         streamBotReplyFallback({
           fullText: data.reply,
-          recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
-          actionButtons: verifiedButtons
+          recommendedItems: !isErrFlag && Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
+          actionButtons: verifiedButtons,
+          isError: isErrFlag,
+          retryPrompt: trimmed
         });
       } else {
-        const clock = getLocalISTClockSummary();
         streamBotReplyFallback({
-          fullText:
-            `**क्षीर सागर के प्रमुख आइटम्स और रेट्स (${clock.shopStatusNote}):**\n\n` +
-            activeMenu
-              .slice(0, 6)
-              .map((m) => `• **${m.name}** — ₹${m.price}`)
-              .join('\n'),
-          recommendedItems: activeMenu.slice(0, 3),
-          actionButtons: []
+          fullText: 'Something went wrong, please try again.',
+          recommendedItems: [],
+          actionButtons: [],
+          isError: true,
+          retryPrompt: trimmed
         });
       }
     } catch (error) {
       console.warn('[Laddu AI Notice]:', error);
       streamBotReplyFallback({
-        fullText:
-          `**क्षीर सागर के प्रमुख आइटम्स और रेट्स:**\n\n` +
-          activeMenu
-            .slice(0, 6)
-            .map((m) => `• **${m.name}** — ₹${m.price}`)
-            .join('\n'),
-        recommendedItems: activeMenu.slice(0, 3),
-        actionButtons: []
+        fullText: 'Something went wrong, please try again.',
+        recommendedItems: [],
+        actionButtons: [],
+        isError: true,
+        retryPrompt: trimmed
       });
     } finally {
       setIsLoading(false);
@@ -1115,6 +1169,36 @@ const AIMitrModal = () => {
                 <div className="max-w-[85%] sm:max-w-[75%] bg-neutral-100 rounded-[22px] px-4 py-3 text-[14.5px] leading-relaxed text-neutral-900">
                   {renderFormattedText(msg.text)}
                 </div>
+              ) : msg.isError ? (
+                /* HONEST ERROR STATE CARD WITH ONE-TAP RETRY BUTTON (ChatGPT / Gemini style) */
+                <div className="max-w-[92%] sm:max-w-[80%] rounded-2xl border border-red-200 bg-red-50/60 px-4 py-3.5 text-sm text-neutral-800 space-y-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="text-[13.5px] leading-relaxed text-neutral-800">
+                      <span className="font-semibold text-neutral-900">Something went wrong, please try again.</span>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        सर्वर से कनेक्ट होने में रुकावट आई। नीचे बटन दबाकर अपना पिछला मैसेज दोबारा भेजें।
+                      </p>
+                    </div>
+                  </div>
+
+                  {msg.retryPrompt && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => sendMessage(msg.retryPrompt, true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white hover:bg-neutral-50 active:bg-neutral-100 text-neutral-800 border border-neutral-200/90 text-xs font-medium transition-all shadow-2xs active:scale-95"
+                      >
+                        <svg className="w-3.5 h-3.5 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Try again</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
                   {renderFormattedText(msg.text)}
@@ -1156,20 +1240,21 @@ const AIMitrModal = () => {
                     </div>
                   )}
 
-                  {/* UNIVERSAL DYNAMIC ACTION BUTTONS (`actionButtons` — Maps, WhatsApp, Call, Cart, Custom Cake, APK, URL) */}
+                  {/* SUBTLE CHATGPT / GEMINI STYLE ACTION CHIPS (Soft light surface, thin border, clean SVG icon) */}
                   {!isMsgStreaming && Array.isArray(msg.actionButtons) && msg.actionButtons.length > 0 && (
-                    <div className="pt-1.5 flex flex-wrap items-center gap-2">
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
                       {msg.actionButtons.map((btn, bIdx) =>
                         btn.modalAction ? (
                           <button
                             key={bIdx}
                             type="button"
                             onClick={() => handleDynamicButtonClick(btn)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-all active:scale-95 shadow-xs"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200/70 text-neutral-800 border border-neutral-200/80 text-xs font-medium transition-all active:scale-95"
                           >
+                            <ActionChipIcon type={btn.type} />
                             <span>{btn.label}</span>
-                            <svg className="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 5l7 7-7 7" />
+                            <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                             </svg>
                           </button>
                         ) : (
@@ -1178,11 +1263,12 @@ const AIMitrModal = () => {
                             href={btn.href}
                             target={btn.external ? '_blank' : undefined}
                             rel={btn.external ? 'noopener noreferrer' : undefined}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold no-underline transition-all active:scale-95 shadow-xs"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200/70 text-neutral-800 border border-neutral-200/80 text-xs font-medium no-underline transition-all active:scale-95"
                           >
+                            <ActionChipIcon type={btn.type} />
                             <span>{btn.label}</span>
-                            <svg className="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M7 17L17 7M17 7H8M17 7V16" />
+                            <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 17L17 7M17 7H8M17 7V16" />
                             </svg>
                           </a>
                         )
