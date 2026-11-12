@@ -1,7 +1,7 @@
 // File: netlify/functions/aiChat.js
-// Laddu AI — True Netlify Functions v2 Web-Standard Streaming (`export default async (req, context) => new Response(ReadableStream)`)
-// Fixes the `502 Bad Gateway` caused by raw `awslambda.streamifyResponse` in v1 `.cjs` functions!
-// IMPORTANT: Delete the old `netlify/functions/aiChat.cjs` file so only `netlify/functions/aiChat.js` exists!
+// Laddu AI — True Netlify Functions v2 Web-Standard Streaming + Universal Dynamic Action Buttons (`actionButtons`) + New Packaging Data
+// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Shankar Shahi Market, Nai Bazar, Mairwa (Siwan) 841239
+// Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
 import mairwaLandmarksModule from "./mairwaLandmarks.cjs";
 
@@ -12,23 +12,31 @@ const DEFAULT_SUPABASE_URL = "https://" + SUPABASE_PROJECT_ID + ".supabase.co";
 
 const STORE_PROFILE = {
   aiName: "Laddu AI",
-  name: "KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)",
+  name: "KshirSagar Sweets Corner / KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स कार्नर — SINCE 1998)",
   established: "Since 1998 — Tradition of Excellence",
-  tagline: "हमेशा कुछ नया (Hamesha Kuch Naya)",
+  tagline: "हमेशा कुछ नया (Hamesha Kuch Naya) | Sweets that make occasions sweeter",
   timings: "सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)",
   deliveryTimings: "सुबह 10:00 बजे से रात 8:00 बजे तक (होम डिलीवरी सुविधा)",
-  address: "Nai Bazar, Mairwa, Bihar 841239",
+  address: "Shankar Shahi Market, Nai Bazar, Mairwa (Siwan), Bihar 841239 (शंकर शाही मार्केट, नई बाज़ार, मैरवा, सीवान)",
   plusCode: "65P2+W8 Mairwa, Bihar",
   coordinates: { lat: 26.2373274, lon: 84.1508169 },
   googleMapsUrl: "https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9",
+  googleMapsDirectionsUrl:
+    "https://www.google.com/maps/dir/?api=1&destination=26.2373274,84.1508169",
   googleMapsFullUrl:
     "https://www.google.com/maps/place/Kshirsagar/@26.2373274,84.1508169,807m/data=!3m2!1e3!4b1!4m6!3m5!1s0x399253b11832e8db:0x88f735f0ec8e1283!8m2!3d26.2373274!4d84.1508169!16s%2Fg%2F11dzd377b_",
   phone: "+91 8226935738",
+  packagingPhones: ["+91 9931890824", "+91 9523242424", "+91 8226935738"],
   whatsapp: "+91 8226935738",
   email: "vikashmw900@gmail.com",
   website: "https://kshirsagarsweets.netlify.app/",
   androidApp: "https://kshirsagarsweets.netlify.app/KshirSagar.apk",
   developer: "Developed by Vikash Kumar Gupta (Instagram: @_vikashkgupta)",
+  packagingPolicies: [
+    "100% Pure Veg (शुद्ध शाकाहारी मिष्ठान एवं बेकरी)",
+    "CONSUME SAME DAY (ताज़ा छेना व दूध की मिठाइयाँ उसी दिन सेवन करने की सलाह दी जाती है)",
+    "BOX CHARGES EXTRA (स्पेशल गिफ्ट/फैंसी मिठाई बॉक्स का शुल्क अलग से लागू होता है)"
+  ],
   highlights: [
     "100% Pure Ingredients (शुद्ध देसी घी और ताज़ा सामग्री)",
     "Hygienic Preparation (पूरी तरह साफ़-सुथरी और हाइजीनिक किचन)",
@@ -568,6 +576,137 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents) {
   return { ok: false, errorText: errors.join(" | ") };
 }
 
+// ============================================================================
+// UNIVERSAL DYNAMIC ACTION BUTTONS BUILDER (ZERO LINK FAILURE GUARDRAIL)
+// ============================================================================
+// AI chooses the custom `label` and `type` ("WHATSAPP" | "MAPS" | "CALL" | "OPEN_CART" | "CUSTOM_CAKE" | "APK" | "INSTAGRAM" | "URL"),
+// and this builder constructs 100% verified, properly encoded URLs or internal modal triggers so a button NEVER fails!
+function sanitizeAndBuildActionButtons(rawButtons, legacyWhatsappText, userMessage, matchedLandmarks, clientCart) {
+  const finalButtons = [];
+  const seenLabels = new Set();
+
+  const addVerifiedButton = (btn) => {
+    if (!btn || !btn.label) return;
+    const label = String(btn.label).trim().slice(0, 52);
+    if (!label || seenLabels.has(label.toLowerCase())) return;
+    seenLabels.add(label.toLowerCase());
+    finalButtons.push(btn);
+  };
+
+  const candidates = Array.isArray(rawButtons) ? rawButtons : [];
+
+  for (const item of candidates) {
+    if (!item || typeof item !== "object") continue;
+    const type = String(item.type || "").toUpperCase().trim();
+    const customLabel = String(item.label || "").trim();
+    const payload = String(item.payload || item.text || item.url || "").trim();
+
+    if (type === "WHATSAPP") {
+      const waMsg =
+        payload ||
+        legacyWhatsappText ||
+        (Array.isArray(clientCart?.items) && clientCart.items.length > 0
+          ? `Namaste KshirSagar! Mera Order:\n${clientCart.items.map((i) => `- ${i.name} x ${i.qty} (₹${i.price * i.qty})`).join("\n")}\nTotal: ₹${clientCart.grandTotal}`
+          : "Namaste KshirSagar! Mujhe order/jankari chahiye.");
+      addVerifiedButton({
+        type: "WHATSAPP",
+        label: customLabel || "💬 WhatsApp पर ऑर्डर / बात करें",
+        href: `https://wa.me/918226935738?text=${encodeURIComponent(waMsg)}`,
+        external: true
+      });
+    } else if (type === "MAPS" || type === "DIRECTION" || type === "LOCATION") {
+      addVerifiedButton({
+        type: "MAPS",
+        label: customLabel || "📍 Google Maps पर दुकान का रास्ता देखें",
+        href: STORE_PROFILE.googleMapsDirectionsUrl,
+        external: true
+      });
+    } else if (type === "CALL" || type === "PHONE") {
+      // Allow choosing any of the 3 official KshirSagar numbers, defaulting to +918226935738
+      const cleanDigits = payload.replace(/\D/g, "");
+      let dialNum = "+918226935738";
+      if (cleanDigits.endsWith("9931890824")) dialNum = "+919931890824";
+      else if (cleanDigits.endsWith("9523242424")) dialNum = "+919523242424";
+      addVerifiedButton({
+        type: "CALL",
+        label: customLabel || "📞 क्षीर सागर पर अभी कॉल करें",
+        href: `tel:${dialNum}`,
+        external: false
+      });
+    } else if (type === "OPEN_CART" || type === "CART") {
+      addVerifiedButton({
+        type: "OPEN_CART",
+        label: customLabel || "🛒 अपना शॉपिंग कार्ट खोलें",
+        modalAction: "OPEN_CART"
+      });
+    } else if (type === "CUSTOM_CAKE" || type === "OPEN_CUSTOM_CAKE" || type === "CAKE") {
+      addVerifiedButton({
+        type: "CUSTOM_CAKE",
+        label: customLabel || "🎂 कस्टम केक ऑर्डर फॉर्म खोलें",
+        modalAction: "OPEN_CUSTOM_CAKE"
+      });
+    } else if (type === "APK" || type === "APP") {
+      addVerifiedButton({
+        type: "APK",
+        label: customLabel || "📲 KshirSagar Android App डाउनलोड करें",
+        href: STORE_PROFILE.androidApp,
+        external: true
+      });
+    } else if (type === "INSTAGRAM" || type === "DEVELOPER") {
+      addVerifiedButton({
+        type: "INSTAGRAM",
+        label: customLabel || "👨‍💻 Developer (@_vikashkgupta) से जुड़ें",
+        href: "https://www.instagram.com/_vikashkgupta/",
+        external: true
+      });
+    } else if (type === "URL" || type === "LINK") {
+      // Strict URL safety guardrail: only allow valid https:// URLs (never fabricated relative/broken links)
+      if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(payload)) {
+        addVerifiedButton({
+          type: "URL",
+          label: customLabel || "🔗 लिंक खोलें",
+          href: payload,
+          external: true
+        });
+      }
+    }
+  }
+
+  // Backward compatibility: if `legacyWhatsappText` was set and no WHATSAPP button exists yet, add it automatically
+  if (legacyWhatsappText && !finalButtons.some((b) => b.type === "WHATSAPP")) {
+    addVerifiedButton({
+      type: "WHATSAPP",
+      label: "💬 WhatsApp पर यह ऑर्डर भेजें",
+      href: `https://wa.me/918226935738?text=${encodeURIComponent(legacyWhatsappText)}`,
+      external: true
+    });
+  }
+
+  // Automatic contextual smart button if the user asked about a landmark/address/route and AI didn't add a MAPS button
+  const lowMsg = String(userMessage || "").toLowerCase();
+  if (
+    finalButtons.length === 0 &&
+    ((Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) ||
+      /\b(address|location|map|rasta|kidhar|kahan|duri|distance|market)\b/i.test(lowMsg) ||
+      lowMsg.includes("पता") ||
+      lowMsg.includes("रास्ता") ||
+      lowMsg.includes("कहाँ") ||
+      lowMsg.includes("मार्केट"))
+  ) {
+    const landmarkName = matchedLandmarks?.[0]?.name?.split("(")?.[0]?.trim();
+    addVerifiedButton({
+      type: "MAPS",
+      label: landmarkName
+        ? `📍 ${landmarkName} से दुकान का मैप देखें`
+        : "📍 Google Maps पर दुकान का रास्ता देखें",
+      href: STORE_PROFILE.googleMapsDirectionsUrl,
+      external: true
+    });
+  }
+
+  return finalButtons.slice(0, 3);
+}
+
 function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherInfo, clientCart, clientDevice, locationStr, matchedLandmarks, debugReason) {
   const q = (userMessage || "").trim();
   const lower = q.toLowerCase();
@@ -581,6 +720,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
       reply: "✅ मैंने आपका कार्ट पूरी तरह खाली (0 items) कर दिया है! आप जब चाहें नए आइटम्स जोड़ सकते हैं।",
       recommendedItems: [],
       action: "CLEAR_CART",
+      actionButtons: [],
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
@@ -588,15 +728,25 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
 
   if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) {
     const top = matchedLandmarks[0];
+    const shortPlace = top.name.split("(")[0].trim();
     return {
       reply:
-        `📍 **${top.name}** से **KshirSagar (Nai Bazar, Mairwa, Bihar 841239)** की जानकारी:\n\n` +
+        `📍 **${top.name}** से **KshirSagar (${STORE_PROFILE.address})** की जानकारी:\n\n` +
         `• **सड़क से अनुमानित दूरी:** ~${top.roadKm} km (${top.direction})\n` +
         `• **पहुँचने का अनुमानित समय:** ~${top.timeMins} मिनट\n` +
         `• **डिलीवरी ज़ोन:** ${top.zone}\n` +
-        `• **दुकान का पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
-        `• **Google Maps लिंक:** ${STORE_PROFILE.googleMapsUrl}`,
+        `• **दुकान का पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)`,
       recommendedItems: [],
+      actionButtons: sanitizeAndBuildActionButtons(
+        [
+          { type: "MAPS", label: `📍 ${shortPlace} से दुकान का रास्ता देखें` },
+          { type: "CALL", label: "📞 दुकान पर कॉल करें" }
+        ],
+        "",
+        userMessage,
+        matchedLandmarks,
+        clientCart
+      ),
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
@@ -618,6 +768,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
         `• **दुकान की स्थिति:** ${clockInfo.shopStatusNote}\n` +
         `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}`,
       recommendedItems: [],
+      actionButtons: [],
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो", "📍 दुकान का समय और पता"]
     };
@@ -637,6 +788,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
         `• **डिवाइस व ब्राउज़र:** ${clientDevice?.platform || "Web Browser"}\n` +
         `• **आपकी लोकेशन:** ${locationStr}`,
       recommendedItems: [],
+      actionButtons: [],
       debugError: debugReason || null,
       quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
@@ -648,17 +800,65 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
       return {
         reply: "🛒 आपका कार्ट अभी खाली (0 आइटम) है! नीचे दिए गए लोकप्रिय आइटम्स में से अपनी पसंद की मिठाई या स्नैक्स चुनें:",
         recommendedItems: menu.slice(0, 3),
+        actionButtons: [],
         debugError: debugReason || null,
         quickFollowUps: ["🍬 आज की स्पेशल मिठाई और रेट बताओ", "🍕 ₹500 में पार्टी कॉम्बो"]
       };
     }
     const listStr = items.map((i) => `• **${i.name}** × ${i.qty} = ₹${i.price * i.qty}`).join("\n");
+    const waText = `Namaste KshirSagar! Mera Order:\n${items.map((i) => `- ${i.name} x ${i.qty} (₹${i.price * i.qty})`).join("\n")}\nTotal: ₹${clientCart.grandTotal}`;
     return {
       reply: `🛒 **आपके कार्ट में अभी ${clientCart.totalQty} आइटम हैं (कुल बिल: ₹${clientCart.grandTotal}):**\n\n${listStr}`,
       recommendedItems: [],
-      whatsappOrderText: `Namaste KshirSagar! Mera Order:\n${items.map((i) => `- ${i.name} x ${i.qty} (₹${i.price * i.qty})`).join("\n")}\nTotal: ₹${clientCart.grandTotal}`,
+      whatsappOrderText: waText,
+      actionButtons: sanitizeAndBuildActionButtons(
+        [
+          { type: "WHATSAPP", label: `💬 ₹${clientCart.grandTotal} का ऑर्डर WhatsApp पर भेजें`, payload: waText },
+          { type: "OPEN_CART", label: "🛒 कार्ट खोलें और चेकआउट करें" }
+        ],
+        waText,
+        userMessage,
+        matchedLandmarks,
+        clientCart
+      ),
       debugError: debugReason || null,
       quickFollowUps: ["🛒 मेरा कार्ट खोल दो", "🗑️ कार्ट खाली (0) कर दो"]
+    };
+  }
+
+  if (
+    lower.includes("address") ||
+    lower.includes("kahan") ||
+    lower.includes("number") ||
+    lower.includes("phone") ||
+    lower.includes("contact") ||
+    lower.includes("dukan") ||
+    lower.includes("shop") ||
+    lower.includes("mairwa") ||
+    lower.includes("खुलती") ||
+    lower.includes("कहाँ") ||
+    lower.includes("पता")
+  ) {
+    return {
+      reply:
+        `**${STORE_PROFILE.name}** (${STORE_PROFILE.established})\n\n` +
+        `• **पता:** ${STORE_PROFILE.address} (Plus Code: \`${STORE_PROFILE.plusCode}\`)\n` +
+        `• **समय:** ${STORE_PROFILE.timings} (${clockInfo.shopStatusNote})\n` +
+        `• **डिलीवरी:** ${clockInfo.deliveryStatusNote}\n` +
+        `• **मोबाइल नंबर:** ${STORE_PROFILE.packagingPhones.join(" / ")}`,
+      recommendedItems: [],
+      actionButtons: sanitizeAndBuildActionButtons(
+        [
+          { type: "MAPS", label: "📍 शंकर शाही मार्केट (नई बाज़ार) मैप पर देखें" },
+          { type: "CALL", label: "📞 दुकान पर कॉल करें" }
+        ],
+        "",
+        userMessage,
+        matchedLandmarks,
+        clientCart
+      ),
+      debugError: debugReason || null,
+      quickFollowUps: ["🍬 आज की स्पेशल मिठाई दिखाओ", "🏷️ लाइव ऑफ़र्स क्या हैं?", "🍕 ₹500 में पार्टी कॉम्बो"]
     };
   }
 
@@ -670,6 +870,7 @@ function buildSmartLocalFallback(userMessage, menu, offers, clockInfo, weatherIn
         .map((m) => `• **${m.name}** — ₹${m.price}`)
         .join("\n"),
     recommendedItems: menu.slice(0, 3),
+    actionButtons: [],
     debugError: debugReason || null,
     quickFollowUps: [
       "🍬 आज की स्पेशल मिठाई और रेट बताओ",
@@ -697,7 +898,7 @@ function buildCoreContextBlock({
   activeOffers
 }) {
   return `
-You are "Laddu AI", the official intelligent assistant of KshirSagar Sweets & Bakers (https://kshirsagarsweets.netlify.app/).
+You are "Laddu AI", the official intelligent assistant of KshirSagar Sweets Corner / KshirSagar Sweets & Bakers (https://kshirsagarsweets.netlify.app/).
 Never refer to yourself as ChatGPT or mention OpenAI/ChatGPT—your name is always "Laddu AI".
 
 YOU HAVE TWO COMPLETE CAPABILITIES AT ALL TIMES:
@@ -736,23 +937,24 @@ Use the exact real-time context provided below whenever relevant:
 - Network Connection: ${clientDevice.networkText || "Online"}
 - User Location / Region: ${locationStr}
 
-=== 5. OFFICIAL STORE PINPOINT LOCATION & MATCHED LOCAL LANDMARKS ===
-- Exact Store Address: "Nai Bazar, Mairwa, Bihar 841239" (Plus Code: "65P2+W8 Mairwa, Bihar", Exact Coordinates: 26.2373274° N, 84.1508169° E).
-- Official Google Maps Link: ${STORE_PROFILE.googleMapsUrl}
-- IMPORTANT: Never mention Power House or Electric Office—the address is strictly "Nai Bazar, Mairwa, Bihar 841239".
+=== 5. OFFICIAL STORE PINPOINT LOCATION, PACKAGING RULES & MATCHED LOCAL LANDMARKS ===
+- Exact Store Address (Printed on Official Box): "Shankar Shahi Market, Nai Bazar, Mairwa (Siwan), Bihar 841239" (शंकर शाही मार्केट, नई बाज़ार, मैरवा, सीवान | Plus Code: "65P2+W8 Mairwa, Bihar", Coordinates: 26.2373274° N, 84.1508169° E).
+- Official Contact Numbers: +91 8226935738 (Online/WhatsApp), +91 9931890824, +91 9523242424.
+- Official Taglines: "हमेशा कुछ नया (Hamesha Kuch Naya)" & "Sweets that make occasions sweeter" (SINCE 1998).
+- Official Packaging Rules: 100% Pure Veg, "CONSUME SAME DAY" for fresh milk/chhena sweets, and "BOX CHARGES EXTRA" for fancy/gift boxes.
+- IMPORTANT: Never mention Power House or Electric Office—the address is strictly "Shankar Shahi Market, Nai Bazar, Mairwa (Siwan), Bihar 841239".
 - Matched Landmarks from User's Query: ${
     matchedLandmarks.length > 0
       ? JSON.stringify(matchedLandmarks)
       : "No specific village/landmark name in this message; use general Mairwa store location if asked."
   }
-  (Whenever a landmark/village is matched above, state its exact "roadKm" distance, "timeMins" travel time, "direction", and "zone" from our Nai Bazar, Mairwa shop, and include the Google Maps link ${STORE_PROFILE.googleMapsUrl}!)
 
 === 6. SMART HALWAI PORTION & PARTY CALCULATOR ===
 ${JSON.stringify(HALWAI_PORTION_GUIDE)}
 
 === 7. UPCOMING INDIAN FESTIVALS & CUSTOM CAKE ADVISOR ===
 - Festivals Guide: ${JSON.stringify(FESTIVAL_OCCASIONS_GUIDE)}
-- Custom Cake Advisor: For birthday/anniversary cakes, suggest Truffle Cake / Red Velvet Cake, give 3 short cake-top messages, and set "action": "OPEN_CUSTOM_CAKE" if they want to open the custom cake request form.
+- Custom Cake Advisor: For birthday/anniversary cakes, suggest Truffle Cake / Red Velvet Cake, give 3 short cake-top messages, and include a "CUSTOM_CAKE" button in "actionButtons".
 
 === 8. OFFICIAL WEBSITE, STORE DETAILS & CREATOR STORY ===
 ${JSON.stringify(STORE_PROFILE)}
@@ -770,10 +972,23 @@ ${JSON.stringify(
 
 === 10. LIVE AIRTABLE OFFERS TABLE ===
 ${JSON.stringify(activeOffers)}
+
+=== 11. UNIVERSAL DYNAMIC ACTION BUTTONS ("actionButtons") ===
+Whenever a clickable button would be helpful to the user, include 1 or 2 customized buttons inside the "actionButtons" array in your metadata JSON!
+You can customize BOTH the button's display text ("label", with an emoji) and its intent ("type" + optional "payload"):
+- {"type": "MAPS", "label": "📍 शंकर शाही मार्केट (नई बाज़ार) का रास्ता देखें"} -> Opens Google Maps directions to KshirSagar Mairwa! Use whenever location, address, distance, village, or directions are discussed.
+- {"type": "WHATSAPP", "label": "💬 ₹500 का पार्टी कॉम्बो WhatsApp पर मँगाएँ", "payload": "Namaste KshirSagar! Mujhe..."} -> Opens WhatsApp with your custom pre-filled message ("payload")! Use whenever orders, combos, bulk/party bookings, or WhatsApp are discussed.
+- {"type": "CALL", "label": "📞 क्षीर सागर पर अभी कॉल करें", "payload": "+918226935738"} -> Dials the store directly! Use when urgent delivery, bulk inquiry, or phone contact is discussed.
+- {"type": "OPEN_CART", "label": "🛒 अपना कार्ट देखें (Checkout)"} -> Opens the user's shopping cart modal! Use when cart/bill is discussed.
+- {"type": "CUSTOM_CAKE", "label": "🎂 कस्टम बर्थडे केक ऑर्डर फॉर्म खोलें"} -> Opens the custom cake design modal! Use when cakes/birthdays/anniversaries are discussed.
+- {"type": "APK", "label": "📲 KshirSagar Android App डाउनलोड करें"} -> Downloads the official Android APK!
+- {"type": "INSTAGRAM", "label": "👨‍💻 Developer (@_vikashkgupta) से जुड़ें"} -> Opens developer Vikash Kumar Gupta's Instagram!
+- {"type": "URL", "label": "🔗 लिंक खोलें", "payload": "https://..."} -> Opens any verified external https:// URL.
+(If the user is just chatting casually or asking a general math/science question where no button is needed, set "actionButtons": [].)
 `;
 }
 
-function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName) {
+function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName, matchedLandmarks, clientCart) {
   const lowerMsg = String(userMessage || "").toLowerCase();
   const actionVal = parsedMeta?.action || "NONE";
   let finalAction = actionVal;
@@ -841,12 +1056,21 @@ function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedN
       ? parsedMeta.quickFollowUps.slice(0, 4)
       : ["🍬 आज की स्पेशल मिठाई दिखाओ", "🍕 ₹500 में पार्टी कॉम्बो", "✨ कुछ नया और रोचक बताओ"];
 
+  const actionButtons = sanitizeAndBuildActionButtons(
+    parsedMeta?.actionButtons,
+    parsedMeta?.whatsappOrderText || "",
+    userMessage,
+    matchedLandmarks,
+    clientCart
+  );
+
   return {
     recommendedItems: matchedItems.slice(0, 4),
     autoAddItems: resolvedAutoAdd,
     autoRemoveItems: resolvedAutoRemove,
     action: finalAction,
     whatsappOrderText: parsedMeta?.whatsappOrderText || "",
+    actionButtons,
     detectedCustomerName: effectiveCustomerName !== "Guest User" ? effectiveCustomerName : "",
     effectiveCustomerName,
     quickFollowUps
@@ -855,7 +1079,6 @@ function resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedN
 
 // ============================================================================
 // NETLIFY FUNCTIONS 2.0 WEB-STANDARD HANDLER (`export default async (req, context)`)
-// Supports native `new Response(ReadableStream)` for TRUE Token-by-Token SSE Streaming!
 // ============================================================================
 export default async (req, context) => {
   const corsHeaders = {
@@ -868,7 +1091,6 @@ export default async (req, context) => {
     return new Response("", { status: 200, headers: corsHeaders });
   }
 
-  // Handle GET requests (Session history sync & `/ai-chats.html` Admin Monitor)
   if (req.method === "GET") {
     const { supabaseUrl, supabaseKey } = resolveSupabaseConfig();
 
@@ -1051,8 +1273,8 @@ export default async (req, context) => {
 1. First, write your complete, natural markdown reply directly to the user (do NOT wrap the reply in JSON or code fences—just write the reply text so it streams word-by-word to the user immediately!).
 2. At the very end of your response, on a new line, output the exact delimiter:
 ---METADATA---
-followed immediately by a single-line JSON object for cart actions, food cards, and follow-ups matching this schema:
-{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","whatsappOrderText":"","detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
+followed immediately by a single-line JSON object for cart actions, food cards, dynamic actionButtons, and follow-ups matching this schema:
+{"showFoodCards":false,"recommendedItemNames":[],"autoAddItems":[],"autoRemoveItems":[],"action":"NONE","actionButtons":[{"type":"MAPS","label":"📍 शंकर शाही मार्केट का रास्ता देखें","payload":""}],"detectedCustomerName":"","quickFollowUps":["🍬 आज की स्पेशल मिठाई दिखाओ","🍕 ₹500 में पार्टी कॉम्बो","✨ कुछ नया और रोचक बताओ"]}
 `;
 
     const contents = [
@@ -1176,7 +1398,14 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             parsedMeta = JSON.parse(cleanMeta);
           } catch {}
 
-          const resolvedMeta = resolveMetadataPayload(parsedMeta, userMessage, activeMenu, rememberedName);
+          const resolvedMeta = resolveMetadataPayload(
+            parsedMeta,
+            userMessage,
+            activeMenu,
+            rememberedName,
+            matchedLandmarks,
+            clientCart
+          );
 
           const supabaseStatus = await saveSessionToSupabase({
             existingRow: existingSupabaseRow,
@@ -1201,6 +1430,7 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
                 autoRemoveItems: resolvedMeta.autoRemoveItems,
                 action: resolvedMeta.action,
                 whatsappOrderText: resolvedMeta.whatsappOrderText,
+                actionButtons: resolvedMeta.actionButtons,
                 detectedCustomerName: resolvedMeta.detectedCustomerName,
                 quickFollowUps: resolvedMeta.quickFollowUps
               })}\n\n`
@@ -1214,6 +1444,7 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
                 type: "done",
                 reply: accumulatedRaw || "माफ़ कीजिए, कनेक्शन में थोड़ी रुकावट आई।",
                 recommendedItems: [],
+                actionButtons: [],
                 action: "NONE"
               })}\n\n`
             )

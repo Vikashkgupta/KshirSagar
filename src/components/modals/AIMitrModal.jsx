@@ -1,6 +1,6 @@
 // File: src/components/modals/AIMitrModal.jsx
-// Laddu AI — True Backend SSE Token-by-Token Streaming Consumer (`ReadableStream` + `TextDecoder`)
-// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Nai Bazar, Mairwa, Bihar 841239
+// Laddu AI — True Backend SSE Streaming + Universal Dynamic Action Buttons (`actionButtons`) + New Packaging Data
+// Exact Store Pin: 26.2373274° N, 84.1508169° E | Plus Code: 65P2+W8 Mairwa, Bihar | Shankar Shahi Market, Nai Bazar, Mairwa (Siwan) 841239
 // Google Maps Short URL: https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -19,15 +19,16 @@ const LIVE_NETLIFY_BASE = 'https://kshirsagarsweets.netlify.app';
 
 const STORE_PROFILE = {
   aiName: 'Laddu AI',
-  name: 'KshirSagar Sweets & Bakers (क्षीर सागर स्वीट्स एंड बेकर्स)',
+  name: 'KshirSagar Sweets Corner (क्षीर सागर स्वीट्स कार्नर — SINCE 1998)',
   established: 'Since 1998 — Tradition of Excellence',
-  tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya)',
+  tagline: 'हमेशा कुछ नया (Hamesha Kuch Naya) • Sweets that make occasions sweeter',
   timings: 'सुबह 8:00 बजे से रात 10:00 बजे तक (सातों दिन खुला)',
-  address: 'Nai Bazar, Mairwa, Bihar 841239',
+  address: 'Shankar Shahi Market, Nai Bazar, Mairwa (Siwan), Bihar 841239',
   plusCode: '65P2+W8 Mairwa, Bihar',
   lat: 26.2373274,
   lon: 84.1508169,
   googleMapsUrl: 'https://maps.app.goo.gl/gWg1gvrsDVqRSqjt9',
+  googleMapsDirectionsUrl: 'https://www.google.com/maps/dir/?api=1&destination=26.2373274,84.1508169',
   phone: '+91 8226935738',
   whatsapp: '+91 8226935738',
   website: 'https://kshirsagarsweets.netlify.app/'
@@ -192,6 +193,53 @@ function getLocalISTClockSummary() {
   return { formattedDate, formattedTime, shopStatusNote, deliveryStatusNote };
 }
 
+// Client-side guardrail normalizer so every button in `actionButtons` is 100% clickable and never broken
+function normalizeClientActionButtons(rawActionButtons, whatsappOrderText) {
+  const list = [];
+  const seen = new Set();
+
+  if (Array.isArray(rawActionButtons)) {
+    rawActionButtons.forEach((btn) => {
+      if (!btn || !btn.label) return;
+      const label = String(btn.label).trim();
+      if (!label || seen.has(label.toLowerCase())) return;
+
+      if (btn.modalAction === 'OPEN_CART' || btn.modalAction === 'OPEN_CUSTOM_CAKE') {
+        seen.add(label.toLowerCase());
+        list.push({
+          label,
+          modalAction: btn.modalAction,
+          type: btn.type || btn.modalAction
+        });
+        return;
+      }
+
+      const href = String(btn.href || '').trim();
+      if (/^(https:\/\/|tel:)/i.test(href)) {
+        seen.add(label.toLowerCase());
+        list.push({
+          label,
+          href,
+          external: !href.startsWith('tel:'),
+          type: btn.type || 'URL'
+        });
+      }
+    });
+  }
+
+  // Fallback if backend only sent `whatsappOrderText`
+  if (list.length === 0 && whatsappOrderText) {
+    list.push({
+      label: '💬 WhatsApp पर यह ऑर्डर भेजें',
+      href: `https://wa.me/918226935738?text=${encodeURIComponent(whatsappOrderText)}`,
+      external: true,
+      type: 'WHATSAPP'
+    });
+  }
+
+  return list.slice(0, 3);
+}
+
 const AIMitrModal = () => {
   const dispatch = useDispatch();
   const { items: cartItems, orderType, tip } = useSelector((state) => state.cart);
@@ -212,7 +260,7 @@ const AIMitrModal = () => {
       sender: 'bot',
       text: INITIAL_WELCOME,
       recommendedItems: [],
-      whatsappOrderText: '',
+      actionButtons: [],
       isStreaming: false
     }
   ]);
@@ -245,8 +293,7 @@ const AIMitrModal = () => {
     };
   }, []);
 
-  // Fallback progressive word stream (only used if running in a local/buffered environment where SSE headers aren't returned)
-  const streamBotReplyFallback = ({ fullText, recommendedItems = [], whatsappOrderText = '' }) => {
+  const streamBotReplyFallback = ({ fullText, recommendedItems = [], actionButtons = [] }) => {
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current);
       streamTimerRef.current = null;
@@ -266,7 +313,7 @@ const AIMitrModal = () => {
         sender: 'bot',
         text: tokens.slice(0, stepSize).join(''),
         recommendedItems: [],
-        whatsappOrderText: '',
+        actionButtons: [],
         isStreaming: true
       }
     ]);
@@ -284,7 +331,7 @@ const AIMitrModal = () => {
                   ...m,
                   text: safeFull,
                   recommendedItems,
-                  whatsappOrderText,
+                  actionButtons,
                   isStreaming: false
                 }
               : m
@@ -314,7 +361,7 @@ const AIMitrModal = () => {
         sender: 'bot',
         text: INITIAL_WELCOME,
         recommendedItems: [],
-        whatsappOrderText: '',
+        actionButtons: [],
         isStreaming: false
       }
     ]);
@@ -343,7 +390,7 @@ const AIMitrModal = () => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           const distKm = calcDistanceFromMairwaShop(lat, lon);
-          let placeLabel = `GPS (${lat.toFixed(4)}, ${lon.toFixed(4)}) • क्षीर सागर (Nai Bazar, Mairwa 841239) से सड़क दूरी: ~${distKm} km`;
+          let placeLabel = `GPS (${lat.toFixed(4)}, ${lon.toFixed(4)}) • क्षीर सागर (शंकर शाही मार्केट, नई बाज़ार मैरवा) से सड़क दूरी: ~${distKm} km`;
 
           try {
             const revRes = await fetch(
@@ -512,7 +559,7 @@ const AIMitrModal = () => {
               sender: turn.role === 'user' ? 'user' : 'bot',
               text: String(turn.text || ''),
               recommendedItems: [],
-              whatsappOrderText: '',
+              actionButtons: [],
               isStreaming: false
             }));
             setMessages((prev) => (prev.length <= 1 ? [prev[0], ...restoredMsgs] : prev));
@@ -660,7 +707,6 @@ const AIMitrModal = () => {
     }, 1400);
   };
 
-  // Applies cart/modal actions returned from either SSE `done` event or buffered JSON response
   const executeAiMetadataActions = (metaData) => {
     if (!metaData) return;
 
@@ -702,6 +748,17 @@ const AIMitrModal = () => {
 
     if (Array.isArray(metaData.quickFollowUps) && metaData.quickFollowUps.length > 0) {
       setChips(metaData.quickFollowUps);
+    }
+  };
+
+  const handleDynamicButtonClick = (btn) => {
+    if (!btn) return;
+    if (btn.modalAction === 'OPEN_CART') {
+      setIsOpen(false);
+      dispatch(toggleCart(true));
+    } else if (btn.modalAction === 'OPEN_CUSTOM_CAKE') {
+      setIsOpen(false);
+      dispatch(toggleCustomRequest(true));
     }
   };
 
@@ -807,7 +864,7 @@ const AIMitrModal = () => {
 
       const contentType = response.headers.get('content-type') || '';
 
-      // CASE 1: TRUE BACKEND SSE STREAM (`text/event-stream`) — Reads tokens live as Gemini generates them!
+      // CASE 1: TRUE BACKEND SSE STREAM (`text/event-stream`)
       if (response.ok && contentType.includes('text/event-stream') && response.body) {
         const botMsgId = 'bot-sse-' + Date.now();
         setStreamingMsgId(botMsgId);
@@ -820,7 +877,7 @@ const AIMitrModal = () => {
             sender: 'bot',
             text: '',
             recommendedItems: [],
-            whatsappOrderText: '',
+            actionButtons: [],
             isStreaming: true
           }
         ]);
@@ -854,6 +911,7 @@ const AIMitrModal = () => {
                 );
               } else if (evt.type === 'done') {
                 const finalTxt = evt.reply || liveAccumulated;
+                const verifiedButtons = normalizeClientActionButtons(evt.actionButtons, evt.whatsappOrderText);
                 setStreamingMsgId(null);
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -862,7 +920,7 @@ const AIMitrModal = () => {
                           ...m,
                           text: finalTxt,
                           recommendedItems: Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
-                          whatsappOrderText: evt.whatsappOrderText || '',
+                          actionButtons: verifiedButtons,
                           isStreaming: false
                         }
                       : m
@@ -886,10 +944,11 @@ const AIMitrModal = () => {
 
       if (data && data.reply) {
         executeAiMetadataActions(data);
+        const verifiedButtons = normalizeClientActionButtons(data.actionButtons, data.whatsappOrderText);
         streamBotReplyFallback({
           fullText: data.reply,
           recommendedItems: Array.isArray(data.recommendedItems) ? data.recommendedItems : [],
-          whatsappOrderText: data.whatsappOrderText || ''
+          actionButtons: verifiedButtons
         });
       } else {
         const clock = getLocalISTClockSummary();
@@ -901,7 +960,7 @@ const AIMitrModal = () => {
               .map((m) => `• **${m.name}** — ₹${m.price}`)
               .join('\n'),
           recommendedItems: activeMenu.slice(0, 3),
-          whatsappOrderText: ''
+          actionButtons: []
         });
       }
     } catch (error) {
@@ -914,7 +973,7 @@ const AIMitrModal = () => {
             .map((m) => `• **${m.name}** — ₹${m.price}`)
             .join('\n'),
         recommendedItems: activeMenu.slice(0, 3),
-        whatsappOrderText: ''
+        actionButtons: []
       });
     } finally {
       setIsLoading(false);
@@ -994,7 +1053,6 @@ const AIMitrModal = () => {
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Clean SVG Cart Button */}
           {totalQty > 0 && (
             <button
               type="button"
@@ -1098,16 +1156,37 @@ const AIMitrModal = () => {
                     </div>
                   )}
 
-                  {!isMsgStreaming && msg.whatsappOrderText && (
-                    <div className="pt-1.5">
-                      <a
-                        href={`https://wa.me/918226935738?text=${encodeURIComponent(msg.whatsappOrderText)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold no-underline transition-all active:scale-95"
-                      >
-                        <span>💬 WhatsApp पर यह ऑर्डर भेजें</span>
-                      </a>
+                  {/* UNIVERSAL DYNAMIC ACTION BUTTONS (`actionButtons` — Maps, WhatsApp, Call, Cart, Custom Cake, APK, URL) */}
+                  {!isMsgStreaming && Array.isArray(msg.actionButtons) && msg.actionButtons.length > 0 && (
+                    <div className="pt-1.5 flex flex-wrap items-center gap-2">
+                      {msg.actionButtons.map((btn, bIdx) =>
+                        btn.modalAction ? (
+                          <button
+                            key={bIdx}
+                            type="button"
+                            onClick={() => handleDynamicButtonClick(btn)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-all active:scale-95 shadow-xs"
+                          >
+                            <span>{btn.label}</span>
+                            <svg className="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <a
+                            key={bIdx}
+                            href={btn.href}
+                            target={btn.external ? '_blank' : undefined}
+                            rel={btn.external ? 'noopener noreferrer' : undefined}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold no-underline transition-all active:scale-95 shadow-xs"
+                          >
+                            <span>{btn.label}</span>
+                            <svg className="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M7 17L17 7M17 7H8M17 7V16" />
+                            </svg>
+                          </a>
+                        )
+                      )}
                     </div>
                   )}
 
