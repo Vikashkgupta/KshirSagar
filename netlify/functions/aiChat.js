@@ -1183,6 +1183,76 @@ function resolveMetadataPayload(
 // ============================================================================
 // NETLIFY FUNCTIONS 2.0 WEB-STANDARD HANDLER (`export default async (req, context)`)
 // ============================================================================
+// Generates a fresh, unscripted 2-line welcome message live from Gemini on the server every time!
+async function generateLiveServerWelcome({ geminiKey, clockInfo, weatherInfo, customerName, clientCart }) {
+  const cleanKey = String(geminiKey || "").trim();
+  const modelsToTry = await getCandidateModels(cleanKey);
+  const nameHint =
+    customerName && customerName !== "Guest User"
+      ? `Customer Name: ${customerName}`
+      : "Customer Name: Guest (do not use placeholder names)";
+  const cartHint =
+    clientCart && Number(clientCart.totalQty) > 0
+      ? `User currently has ${clientCart.totalQty} items (₹${clientCart.grandTotal}) in their cart.`
+      : "User cart is currently empty.";
+  const randomSeed = Math.floor(100000 + Math.random() * 900000);
+
+  const systemPrompt = `You are "Laddu AI", the friendly official AI assistant of KshirSagar Sweets Corner (क्षीर सागर स्वीट्स कार्नर, शंकर शाही मार्केट, नई बाज़ार, मैरवा — Since 1998, Tagline: "हमेशा कुछ नया").
+Generate a completely fresh, creative, warm 2-line welcome greeting in natural Hinglish/Hindi for a user who just opened the chat.
+Context right now:
+- Live IST Time & Mood: ${clockInfo.formattedTime} (${clockInfo.timeMood})
+- Shop Status: ${clockInfo.shopStatusNote}
+- Live Mairwa Weather: ${weatherInfo}
+- ${nameHint}
+- ${cartHint}
+- Random Creativity Seed (ensure every greeting is phrased differently): ${randomSeed}
+
+STRICT RULES:
+1. Output ONLY the 2 short lines separated by a blank line (\n\n).
+2. Line 1: Warm greeting welcoming them to KshirSagar (optionally nodding to the time of day, weather, or their cart if non-empty).
+3. Line 2: Introduce yourself as Laddu AI and ask how you can help today (sweets, snacks, cake, party combo, or any question).
+4. Keep it concise, natural, and under 30 words total. Do NOT output JSON or markdown code fences.`;
+
+  for (const modelName of modelsToTry.slice(0, 3)) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+    try {
+      const res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": cleanKey
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: `Generate a unique 2-line welcome message now (seed: ${randomSeed}).` }]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.95,
+              maxOutputTokens: 120
+            }
+          })
+        },
+        4500
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const text = extractVisibleTextFromParts(data?.candidates?.[0]?.content?.parts).trim();
+        if (text) {
+          cachedWorkingModel = modelName;
+          return { ok: true, welcomeText: text, modelUsed: modelName };
+        }
+      }
+    } catch {}
+  }
+  return { ok: false };
+}
+
 export default async (req, context) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -1277,6 +1347,51 @@ export default async (req, context) => {
     const clientDevice = body.clientDevice || {};
     const recentViewedDishes = Array.isArray(body.recentViewedDishes) ? body.recentViewedDishes : [];
     const isReturningVisitor = Boolean(body.isReturningVisitor);
+
+    // LIVE SERVER-GENERATED DYNAMIC WELCOME GREETING (Called on every page refresh / new chat)
+    if (body.isWelcomeGreeting) {
+      const clockInfo = getLiveISTClockAndShopStatus();
+      const weatherInfo = await getFastMairwaWeather("");
+      const geminiKey =
+        process.env.GEMINI_API_KEY ||
+        process.env.VITE_GEMINI_API_KEY ||
+        process.env.GOOGLE_API_KEY;
+
+      if (geminiKey) {
+        const gen = await generateLiveServerWelcome({
+          geminiKey,
+          clockInfo,
+          weatherInfo,
+          customerName,
+          clientCart
+        });
+        if (gen.ok && gen.welcomeText) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              welcome: gen.welcomeText,
+              modelUsed: gen.modelUsed
+            }),
+            {
+              status: 200,
+              headers: {
+                ...corsHeaders,
+                "Content-Type": "application/json",
+                "Cache-Control": "no-store, no-cache, must-revalidate"
+              }
+            }
+          );
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          welcome: ""
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const clockInfo = getLiveISTClockAndShopStatus();
     const locationStr = extractUserLocationContext(req.headers, context?.geo, clientDevice);

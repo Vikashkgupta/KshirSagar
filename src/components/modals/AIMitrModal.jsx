@@ -42,7 +42,8 @@ const QUICK_PROMPTS = [
   '✨ कुछ नया और रोचक बताओ'
 ];
 
-const INITIAL_WELCOME =
+// Default instant placeholder while live AI welcome streams in from the server
+const FALLBACK_WELCOME =
   'Hi 👋 KshirSagar में आपका स्वागत है!\n\n' +
   'मैं हूँ Laddu AI! बताइए, आज आपकी क्या मदद करूँ? 😊';
 
@@ -257,14 +258,15 @@ const AIMitrModal = () => {
     {
       id: 'welcome-1',
       sender: 'bot',
-      text: INITIAL_WELCOME,
+      text: '',
       recommendedItems: [],
       actionButtons: [],
       isError: false,
       retryPrompt: '',
-      isStreaming: false
+      isStreaming: true
     }
   ]);
+  const [isGeneratingWelcome, setIsGeneratingWelcome] = useState(false);
   const [hasSyncedSupabase, setHasSyncedSupabase] = useState(false);
   const [userLocationText, setUserLocationText] = useState('');
   const [input, setInput] = useState('');
@@ -369,7 +371,49 @@ const AIMitrModal = () => {
     }, 22);
   };
 
-  const handleClearScreenChat = (toastMessage = 'चैट साफ़ कर दी गई') => {
+  const fetchLiveServerWelcome = async (targetMsgId = 'welcome-1') => {
+    setIsGeneratingWelcome(true);
+    try {
+      const { customerName } = getKnownCustomerIdentity();
+      const targetUrl =
+        typeof window !== 'undefined' && window.location.hostname === 'localhost'
+          ? `${LIVE_NETLIFY_BASE}/.netlify/functions/aiChat`
+          : '/.netlify/functions/aiChat';
+
+      const res = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isWelcomeGreeting: true,
+          customerName,
+          clientCart: { totalQty, grandTotal }
+        })
+      });
+
+      const data = res.ok ? await res.json() : null;
+      const freshWelcome = String(data?.welcome || FALLBACK_WELCOME).trim();
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === targetMsgId
+            ? { ...m, text: freshWelcome, isStreaming: false }
+            : m
+        )
+      );
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === targetMsgId
+            ? { ...m, text: FALLBACK_WELCOME, isStreaming: false }
+            : m
+        )
+      );
+    } finally {
+      setIsGeneratingWelcome(false);
+    }
+  };
+
+  const handleClearScreenChat = (toastMessage = 'नया चैट शुरू हुआ') => {
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current);
       streamTimerRef.current = null;
@@ -378,19 +422,21 @@ const AIMitrModal = () => {
     try {
       localStorage.setItem('ks_chat_cleared_at', new Date().toISOString());
     } catch {}
+    const newWelcomeId = 'welcome-' + Date.now();
     setMessages([
       {
-        id: 'welcome-' + Date.now(),
+        id: newWelcomeId,
         sender: 'bot',
-        text: INITIAL_WELCOME,
+        text: '',
         recommendedItems: [],
         actionButtons: [],
         isError: false,
         retryPrompt: '',
-        isStreaming: false
+        isStreaming: true
       }
     ]);
     showToast(toastMessage);
+    fetchLiveServerWelcome(newWelcomeId);
   };
 
   useEffect(() => {
@@ -475,6 +521,7 @@ const AIMitrModal = () => {
     } catch {}
 
     tryDetectPreciseLocation(false);
+    fetchLiveServerWelcome(welcome-1);
 
     window.toggleKshirSagarAI = () => setIsOpen((prev) => !prev);
     window.openKshirSagarAI = () => setIsOpen(true);
@@ -1232,7 +1279,15 @@ const AIMitrModal = () => {
                 </div>
               ) : (
                 <div className="max-w-[96%] sm:max-w-[88%] text-[14.5px] leading-relaxed text-neutral-900 space-y-2">
-                  {renderFormattedText(msg.text)}
+                  {msg.text ? (
+                    renderFormattedText(msg.text)
+                  ) : (
+                    <div className="flex items-center gap-1.5 py-2 px-1">
+                      <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce"></span>
+                      <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0.15s' }}></span>
+                      <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0.3s' }}></span>
+                    </div>
+                  )}
 
                   {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button */}
                   {!isMsgStreaming && String(msg.text || '').trim().length > 0 && (
