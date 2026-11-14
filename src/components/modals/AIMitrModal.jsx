@@ -977,8 +977,8 @@ const AIMitrModal = () => {
                   prev.map((m) => (m.id === botMsgId ? { ...m, text: snapshot } : m))
                 );
               } else if (evt.type === 'done') {
-                const finalTxt = evt.reply || liveAccumulated;
-                const isErrFlag = Boolean(evt.isError);
+                const finalTxt = String(evt.reply || liveAccumulated || '').trim();
+                const isErrFlag = Boolean(evt.isError) || finalTxt.length === 0;
                 const verifiedButtons = isErrFlag
                   ? []
                   : normalizeClientActionButtons(evt.actionButtons, evt.whatsappOrderText);
@@ -988,7 +988,7 @@ const AIMitrModal = () => {
                     m.id === botMsgId
                       ? {
                           ...m,
-                          text: finalTxt,
+                          text: isErrFlag ? 'Something went wrong, please try again.' : finalTxt,
                           isError: isErrFlag,
                           retryPrompt: trimmed,
                           recommendedItems:
@@ -1009,7 +1009,17 @@ const AIMitrModal = () => {
 
         setStreamingMsgId(null);
         setMessages((prev) =>
-          prev.map((m) => (m.id === botMsgId ? { ...m, isStreaming: false } : m))
+          prev.map((m) => {
+            if (m.id !== botMsgId) return m;
+            const hasText = String(m.text || '').trim().length > 0;
+            return {
+              ...m,
+              text: hasText ? m.text : 'Something went wrong, please try again.',
+              isError: m.isError || !hasText,
+              retryPrompt: trimmed,
+              isStreaming: false
+            };
+          })
         );
         return;
       }
@@ -1225,7 +1235,7 @@ const AIMitrModal = () => {
                   {renderFormattedText(msg.text)}
 
                   {/* Feature #17: Clean Minimal SVG Speaker ("सुनें") & Stop ("रोकें") Button */}
-                  {!isMsgStreaming && (
+                  {!isMsgStreaming && String(msg.text || '').trim().length > 0 && (
                     <div className="flex items-center gap-3 pt-0.5">
                       <button
                         type="button"
