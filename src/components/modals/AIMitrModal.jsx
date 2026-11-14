@@ -98,9 +98,9 @@ function calcDistanceFromMairwaShop(lat, lon) {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((STORE_PROFILE.lat * Math.PI) / 180) *
-      Math.cos((lat * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const straightKm = R * c;
   const roadKm = Math.max(0.1, straightKm * 1.22);
@@ -119,7 +119,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
     if (typeof navigator !== 'undefined' && navigator.brave && typeof navigator.brave.isBrave === 'function') {
       isBraveBrowser = await navigator.brave.isBrave();
     }
-  } catch {}
+  } catch { }
 
   const browserLabel = isBraveBrowser ? 'Brave Browser' : /Edg/i.test(ua) ? 'Edge' : /Chrome/i.test(ua) ? 'Chrome' : 'Browser';
   const platform = `${os} • ${browserLabel} (${screenStr})`;
@@ -137,7 +137,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
         batteryText = `${pct}% (${bat.charging ? '⚡ चार्ज हो रहा है (Charging)' : 'चार्जिंग पर नहीं है (Not Charging)'})`;
       }
     }
-  } catch {}
+  } catch { }
 
   let networkText = typeof navigator !== 'undefined' && navigator.onLine === false ? 'Offline' : 'Online';
   try {
@@ -148,7 +148,7 @@ async function getCompleteDeviceBatteryAndLocationContext(cachedGeoStr) {
       if (typeof conn.downlink === 'number') parts.push(`${conn.downlink} Mbps`);
       if (parts.length > 0) networkText = parts.join(' • ');
     }
-  } catch {}
+  } catch { }
 
   return {
     platform,
@@ -353,12 +353,12 @@ const AIMitrModal = () => {
           prev.map((m) =>
             m.id === msgId
               ? {
-                  ...m,
-                  text: safeFull,
-                  recommendedItems,
-                  actionButtons,
-                  isStreaming: false
-                }
+                ...m,
+                text: safeFull,
+                recommendedItems,
+                actionButtons,
+                isStreaming: false
+              }
               : m
           )
         );
@@ -421,7 +421,7 @@ const AIMitrModal = () => {
     setStreamingMsgId(null);
     try {
       localStorage.setItem('ks_chat_cleared_at', new Date().toISOString());
-    } catch {}
+    } catch { }
     const newWelcomeId = 'welcome-' + Date.now();
     setMessages([
       {
@@ -446,7 +446,7 @@ const AIMitrModal = () => {
         const updated = [dishName, ...prev.filter((d) => d !== dishName)].slice(0, 5);
         try {
           sessionStorage.setItem('ks_recent_dishes', JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return updated;
       });
     }
@@ -483,14 +483,14 @@ const AIMitrModal = () => {
                 placeLabel = `${area}${distName ? ', ' + distName : ''} (दुकान से सड़क दूरी: ~${distKm} km)`;
               }
             }
-          } catch {}
+          } catch { }
 
           setUserLocationText(placeLabel);
           try {
             sessionStorage.setItem('ks_user_location_text', placeLabel);
-          } catch {}
+          } catch { }
         },
-        () => {},
+        () => { },
         { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 }
       );
     };
@@ -506,7 +506,7 @@ const AIMitrModal = () => {
         .then((res) => {
           if (res.state === 'granted') runGeo();
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   };
 
@@ -518,10 +518,11 @@ const AIMitrModal = () => {
       }
       const savedLoc = sessionStorage.getItem('ks_user_location_text') || '';
       if (savedLoc) setUserLocationText(savedLoc);
-    } catch {}
+    } catch { }
 
     tryDetectPreciseLocation(false);
-    fetchLiveServerWelcome(welcome-1);
+    // fetchLiveServerWelcome(welcome-1);
+    fetchLiveServerWelcome('welcome-1');
 
     window.toggleKshirSagarAI = () => setIsOpen((prev) => !prev);
     window.openKshirSagarAI = () => setIsOpen(true);
@@ -575,7 +576,7 @@ const AIMitrModal = () => {
       if (localRes.ok && contentType.includes('application/json')) {
         return await localRes.json();
       }
-    } catch {}
+    } catch { }
 
     if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
       try {
@@ -584,7 +585,7 @@ const AIMitrModal = () => {
         if (remoteRes.ok && remoteType.includes('application/json')) {
           return await remoteRes.json();
         }
-      } catch {}
+      } catch { }
     }
 
     return null;
@@ -619,7 +620,7 @@ const AIMitrModal = () => {
           let clearedAt = '';
           try {
             clearedAt = localStorage.getItem('ks_chat_cleared_at') || '';
-          } catch {}
+          } catch { }
 
           const visibleConv = clearedAt
             ? savedConv.filter((turn) => turn.timestamp && turn.timestamp > clearedAt)
@@ -646,7 +647,7 @@ const AIMitrModal = () => {
         ) {
           try {
             localStorage.setItem('ks_customer_name', sessionData.session.customer_name);
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -787,7 +788,7 @@ const AIMitrModal = () => {
     if (metaData.detectedCustomerName && String(metaData.detectedCustomerName).trim()) {
       try {
         localStorage.setItem('ks_customer_name', String(metaData.detectedCustomerName).trim());
-      } catch {}
+      } catch { }
     }
 
     if (Array.isArray(metaData.autoAddItems) && metaData.autoAddItems.length > 0) {
@@ -1034,15 +1035,15 @@ const AIMitrModal = () => {
                   prev.map((m) =>
                     m.id === botMsgId
                       ? {
-                          ...m,
-                          text: isErrFlag ? 'Something went wrong, please try again.' : finalTxt,
-                          isError: isErrFlag,
-                          retryPrompt: trimmed,
-                          recommendedItems:
-                            !isErrFlag && Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
-                          actionButtons: verifiedButtons,
-                          isStreaming: false
-                        }
+                        ...m,
+                        text: isErrFlag ? 'Something went wrong, please try again.' : finalTxt,
+                        isError: isErrFlag,
+                        retryPrompt: trimmed,
+                        recommendedItems:
+                          !isErrFlag && Array.isArray(evt.recommendedItems) ? evt.recommendedItems : [],
+                        actionButtons: verifiedButtons,
+                        isStreaming: false
+                      }
                       : m
                   )
                 );
@@ -1050,7 +1051,7 @@ const AIMitrModal = () => {
                   executeAiMetadataActions(evt);
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
 
@@ -1139,7 +1140,7 @@ const AIMitrModal = () => {
 
   return (
     <div className="fixed inset-0 z-[10000] bg-white flex flex-col h-[100dvh] w-screen overflow-hidden text-neutral-900 font-sans">
-      
+
       {/* Toast Notification */}
       {toastText && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10002] bg-neutral-900 text-white text-xs px-4 py-2 rounded-full shadow-md transition-all font-medium">
@@ -1295,11 +1296,10 @@ const AIMitrModal = () => {
                       <button
                         type="button"
                         onClick={() => handleSpeakMessage(msg.id, msg.text)}
-                        className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
-                          speakingMsgId === msg.id
+                        className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors ${speakingMsgId === msg.id
                             ? 'text-neutral-900'
                             : 'text-neutral-400 hover:text-neutral-700'
-                        }`}
+                          }`}
                         title={speakingMsgId === msg.id ? 'आवाज़ रोकें' : 'यह जवाब सुनें'}
                       >
                         {speakingMsgId === msg.id ? (
@@ -1392,11 +1392,10 @@ const AIMitrModal = () => {
                             <button
                               type="button"
                               onClick={() => handleAddToReduxCart(item, 1)}
-                              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold active:scale-95 transition-all flex-shrink-0 ${
-                                isAdded
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold active:scale-95 transition-all flex-shrink-0 ${isAdded
                                   ? 'bg-neutral-300 text-neutral-800'
                                   : 'bg-neutral-900 hover:bg-neutral-800 text-white'
-                              }`}
+                                }`}
                             >
                               {isAdded ? '✓ Added' : '+ Add'}
                             </button>
@@ -1462,11 +1461,10 @@ const AIMitrModal = () => {
             <button
               type="button"
               onClick={handleVoiceInput}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                isListening
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${isListening
                   ? 'bg-neutral-900 text-white animate-pulse'
                   : 'text-neutral-500 hover:text-neutral-900'
-              }`}
+                }`}
               title="Voice Input"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1477,11 +1475,10 @@ const AIMitrModal = () => {
             <button
               type="submit"
               disabled={!canSend}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                canSend
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${canSend
                   ? 'bg-neutral-900 text-white cursor-pointer active:scale-95'
                   : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-              }`}
+                }`}
               title="Send"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
