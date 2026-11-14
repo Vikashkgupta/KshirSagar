@@ -1,7 +1,6 @@
 // File: netlify/functions/aiChat.js
-// Laddu AI — TURBO EDITION (~0.4s to 0.9s Time-To-First-Token!)
-// Keeps 100% of all features (Supabase memory, Live Weather, 968 Mairwa Landmarks, Google Search Grounding, Dynamic Action Buttons, Cart Control)
-// while eliminating all blocking pre-flight network waterfalls!
+// Laddu AI — Auto-Discovered Gemini 3.x / 2.x Models (Cached) + Turbo Streaming + Live Google Search Grounding
+// Fixes the 404/403 caused by retired `gemini-2.0-flash` static strings by restoring dynamic `/v1beta/models` discovery!
 
 import mairwaLandmarksModule from "./mairwaLandmarks.cjs";
 
@@ -93,18 +92,8 @@ const FALLBACK_OFFERS = [
   { title: "Party Combo Offer", code: "PARTY50", discount: "पिज़्ज़ा और स्नैक्स कॉम्बो पर ₹50 की छूट", active: true }
 ];
 
-// ============================================================================
-// TURBO OPTIMIZATION #1: ZERO-LATENCY PRE-RANKED MODEL LIST
-// Eliminates the 1,400ms `/v1beta/models` discovery HTTP call on cold starts!
-// ============================================================================
-const FAST_STATIC_MODELS = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-flash-latest",
-  "gemini-flash-lite-latest"
-];
-
 let cachedWorkingModel = null;
+let cachedDiscoveredModels = null;
 let cachedWeather = { text: "मैरवा में सुहाना मौसम", fetchedAt: 0, isFetching: false };
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 4000) {
@@ -117,11 +106,86 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 4000) {
   }
 }
 
-function getCandidateModelsSync() {
-  if (cachedWorkingModel) {
-    return [cachedWorkingModel, ...FAST_STATIC_MODELS.filter((m) => m !== cachedWorkingModel)];
+function isSupportedTextModel(name) {
+  const n = String(name || "").toLowerCase();
+  if (
+    n.includes("tts") ||
+    n.includes("image") ||
+    n.includes("imagen") ||
+    n.includes("veo") ||
+    n.includes("embedding") ||
+    n.includes("aqa") ||
+    n.includes("audio") ||
+    n.includes("robotics") ||
+    n.includes("thinking") ||
+    n.includes("learnlm") ||
+    n.includes("2.5-pro") ||
+    n.includes("2.5-flash") ||
+    n.includes("exp")
+  ) {
+    return false;
   }
-  return FAST_STATIC_MODELS;
+  return n.includes("gemini");
+}
+
+// Prioritizes active Gemini 3.x Flash / Flash-Lite models (the exact rank order that worked on your key!)
+function rankModel(name) {
+  const n = String(name || "").toLowerCase();
+  if (n.startsWith("gemini-3") && n.includes("flash-lite")) return 100;
+  if (n.startsWith("gemini-3") && n.includes("flash") && !n.includes("preview")) return 96;
+  if (n.startsWith("gemini-3") && n.includes("flash")) return 92;
+  if (n === "gemini-flash-lite-latest") return 88;
+  if (n === "gemini-flash-latest") return 85;
+  if (n.startsWith("gemini-2.0-flash-lite")) return 80;
+  if (n.startsWith("gemini-2.0-flash")) return 75;
+  return 50;
+}
+
+// Discovers the exact active models enabled on your Google AI Studio key once per instance and caches them in memory (`0ms` on subsequent messages!)
+async function getCandidateModels(apiKey) {
+  const cleanKey = String(apiKey || "").trim();
+  if (!cachedDiscoveredModels) {
+    try {
+      const listRes = await fetchWithTimeout(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        { headers: { "x-goog-api-key": cleanKey } },
+        1400
+      );
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const found = (listData.models || [])
+          .filter(
+            (m) =>
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes("generateContent")
+          )
+          .map((m) => m.name.replace("models/", ""))
+          .filter(isSupportedTextModel)
+          .sort((a, b) => rankModel(b) - rankModel(a));
+
+        if (found.length > 0) {
+          cachedDiscoveredModels = found;
+        }
+      }
+    } catch {}
+  }
+
+  let modelsToTry =
+    cachedDiscoveredModels && cachedDiscoveredModels.length > 0
+      ? cachedDiscoveredModels
+      : [
+          "gemini-3.5-flash-lite",
+          "gemini-3.8-flash",
+          "gemini-flash-lite-latest",
+          "gemini-flash-latest",
+          "gemini-2.0-flash-lite",
+          "gemini-2.0-flash"
+        ];
+
+  if (cachedWorkingModel) {
+    modelsToTry = [cachedWorkingModel, ...modelsToTry.filter((m) => m !== cachedWorkingModel)];
+  }
+  return modelsToTry;
 }
 
 function extractUserLocationContext(reqHeaders, contextGeo, clientDevice) {
@@ -229,11 +293,6 @@ function getLiveISTClockAndShopStatus() {
   };
 }
 
-// ============================================================================
-// TURBO OPTIMIZATION #2: NON-BLOCKING WEATHER REFRESH (Stale-While-Revalidate)
-// Only blocks (up to 650ms) if the user explicitly asks about weather (`मौसम`);
-// otherwise returns cached weather in 0ms and refreshes in the background!
-// ============================================================================
 async function refreshMairwaWeatherAsync() {
   if (cachedWeather.isFetching) return cachedWeather.text;
   cachedWeather.isFetching = true;
@@ -276,7 +335,6 @@ async function getFastMairwaWeather(userMessage) {
     return await refreshMairwaWeatherAsync();
   }
 
-  // Fire-and-forget background refresh (0ms blocking!)
   refreshMairwaWeatherAsync();
   return cachedWeather.text;
 }
@@ -350,7 +408,6 @@ async function saveSessionToSupabase({
 
   try {
     const nowIso = new Date().toISOString();
-    // If existingRow wasn't fetched pre-flight (because clientHistory was already loaded), fetch it right now after streaming!
     const resolvedRow = existingRow !== undefined ? existingRow : await fetchSessionFromSupabase(sessionId, 1800);
     const rowExists = Boolean(resolvedRow && resolvedRow.session_id);
 
@@ -503,16 +560,10 @@ async function fetchLiveAirtableData(baseId, apiKey) {
   }
 }
 
-// ============================================================================
-// TURBO OPTIMIZATION #3: PRECISION GOOGLE SEARCH ROUTER
-// Only activates `google_search` (which takes ~1.5s on Google's servers) when the query genuinely needs live web facts/dates/panchang/results!
-// Store, menu, cart, math, coding, translation, recipes, jokes, and general chat stream in 0.4s!
-// ============================================================================
 function shouldUseLiveGoogleSearch(userMessage, matchedLandmarks) {
   const q = String(userMessage || "").trim().toLowerCase();
   if (!q || q.length < 3) return false;
 
-  // 1. Store, Menu, Cart, or Local Mairwa Landmark queries -> 0.4s Direct Fast Path!
   if (Array.isArray(matchedLandmarks) && matchedLandmarks.length > 0) return false;
 
   const isStoreOrCartQuery =
@@ -590,16 +641,16 @@ function buildValidGeminiContents(mergedHistory, userMessage) {
 
 async function openGeminiSSEStream(apiKey, systemInstruction, contents, useSearchGrounding = false) {
   const cleanKey = String(apiKey || "").trim();
-  const modelsToTry = getCandidateModelsSync();
+  const modelsToTry = await getCandidateModels(cleanKey);
   const errors = [];
 
-  for (const modelName of modelsToTry.slice(0, 3)) {
+  for (const modelName of modelsToTry.slice(0, 4)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse`;
     const attempts = useSearchGrounding ? [true, false] : [false];
 
     for (const withSearchTool of attempts) {
       const controller = new AbortController();
-      const connectTimer = setTimeout(() => controller.abort(), withSearchTool ? 14000 : 6500);
+      const connectTimer = setTimeout(() => controller.abort(), withSearchTool ? 14000 : 7500);
       try {
         const requestBody = {
           systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -636,6 +687,9 @@ async function openGeminiSSEStream(apiKey, systemInstruction, contents, useSearc
         } else {
           const errTxt = await res.text();
           errors.push(`${modelName}[search=${withSearchTool}](${res.status}): ${errTxt.slice(0, 90)}`);
+          if (cachedWorkingModel === modelName && !withSearchTool) {
+            cachedWorkingModel = null;
+          }
         }
       } catch (err) {
         clearTimeout(connectTimer);
@@ -656,9 +710,9 @@ function extractVisibleTextFromParts(parts) {
 
 async function callGeminiBufferedRescue(apiKey, systemInstruction, contents, useSearchGrounding = false) {
   const cleanKey = String(apiKey || "").trim();
-  const modelsToTry = getCandidateModelsSync();
+  const modelsToTry = await getCandidateModels(cleanKey);
 
-  for (const modelName of modelsToTry.slice(0, 3)) {
+  for (const modelName of modelsToTry.slice(0, 4)) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
     const attempts = useSearchGrounding ? [true, false] : [false];
 
@@ -683,7 +737,7 @@ async function callGeminiBufferedRescue(apiKey, systemInstruction, contents, use
             },
             body: JSON.stringify(reqBody)
           },
-          withSearchTool ? 12000 : 6000
+          withSearchTool ? 12000 : 6500
         );
         if (res.ok) {
           const data = await res.json();
@@ -1051,6 +1105,17 @@ function resolveMetadataPayload(
     if (matchedItems.length === 0 && names.length > 0) {
       matchedItems = activeMenu.slice(0, 3);
     }
+  } else if (
+    /\b(party combo|combo|special mithai|rate|price|menu|sweets|pizza|snacks)\b/i.test(lowerMsg) ||
+    lowerMsg.includes("पार्टी कॉम्बो") ||
+    lowerMsg.includes("स्पेशल मिठाई") ||
+    lowerMsg.includes("रेट") ||
+    lowerMsg.includes("मेनू")
+  ) {
+    // Auto-match any menu items mentioned in the AI reply if the user asked for a combo/menu!
+    matchedItems = activeMenu
+      .filter((item) => aiReplyText.toLowerCase().includes(item.name.toLowerCase()))
+      .slice(0, 4);
   }
 
   const resolvedAutoAdd = [];
@@ -1218,12 +1283,6 @@ export default async (req, context) => {
     const matchedLandmarks = searchMairwaLandmarks(userMessage, 5);
     const useSearchGrounding = shouldUseLiveGoogleSearch(userMessage, matchedLandmarks);
 
-    // ========================================================================
-    // TURBO OPTIMIZATION #4: ZERO PRE-FLIGHT BLOCKING WHEN CLIENT HAS HISTORY!
-    // If the frontend already sent `clientMenu` and `clientHistory`, we DO NOT block
-    // waiting on Supabase GET or Open-Meteo before calling Gemini!
-    // Gemini starts streaming in ~0.3s while Supabase saves asynchronously at the end!
-    // ========================================================================
     const needsPreFlightSupabase = clientHistory.length <= 1 && customerName === "Guest User";
 
     const [liveData, weatherInfo, existingSupabaseRow] = await Promise.all([
@@ -1561,11 +1620,6 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             collectedGroundingSources
           );
 
-          // ==================================================================
-          // TURBO OPTIMIZATION #5: FLUSH "done" EVENT TO BROWSER FIRST!
-          // We send the `done` event (buttons, food cards, cart actions) to the user
-          // BEFORE waiting on the Supabase write, shaving off another ~500ms!
-          // ==================================================================
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
@@ -1588,7 +1642,6 @@ followed immediately by a single-line JSON object for cart actions, food cards, 
             )
           );
 
-          // Complete Supabase logging cleanly before closing the function
           await saveSessionToSupabase({
             existingRow: existingSupabaseRow,
             sessionId,
